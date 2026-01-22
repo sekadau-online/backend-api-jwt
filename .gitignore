@@ -1,1 +1,7 @@
 /target
+.env
+.DS_Store
+.idea
+.vscode
+*.log
+*.sqlite
