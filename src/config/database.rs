@@ -24,45 +24,66 @@ pub async fn establish_connection() -> MySqlPool {
     if let Err(e) = sqlx::migrate!("./migrations").run(&pool).await {
         eprintln!("Failed to run database migrations: {}", e);
 
-        // Try to detect a VersionMismatch (partially applied migration). If found,
-        // remove the partial row from `_sqlx_migrations` and retry once.
+        // Try to detect a VersionMismatch (partially applied migration) in multiple
+        // possible message formats and attempt recovery by removing the partial
+        // `_sqlx_migrations` row and retrying once.
         let err_str = format!("{}", e);
+
+        // Helper to perform delete+retry for a given version string
+        async fn delete_and_retry(pool: &MySqlPool, version: &str) {
+            eprintln!("Detected partially applied migration {}. Attempting recovery...", version);
+            match sqlx::query("DELETE FROM `_sqlx_migrations` WHERE version = ?")
+                .bind(version)
+                .execute(pool)
+                .await
+            {
+                Ok(_) => {
+                    eprintln!("Deleted partial migration row for {}. Retrying migrations.", version);
+                }
+                Err(del_err) => {
+                    eprintln!("Failed to delete partial migration row for {}: {}", version, del_err);
+                    std::process::exit(1);
+                }
+            }
+
+            // Retry migrations once
+            if let Err(retry_err) = sqlx::migrate!("./migrations").run(pool).await {
+                eprintln!("Retry failed: {}", retry_err);
+                std::process::exit(1);
+            } else {
+                println!("Database migrations applied successfully after recovery");
+            }
+        }
+
+        // Try to parse `VersionMismatch(...)` pattern first
         if let Some(start) = err_str.find("VersionMismatch(") {
             if let Some(open_paren) = err_str[start..].find('(') {
                 let rest = &err_str[start + open_paren + 1..];
                 if let Some(close_paren) = rest.find(')') {
                     let version = &rest[..close_paren];
-                    eprintln!("Detected VersionMismatch for migration {}, attempting recovery...", version);
-
-                    // Attempt to delete the partial migration row
-                    match sqlx::query("DELETE FROM `_sqlx_migrations` WHERE version = ?")
-                        .bind(version)
-                        .execute(&pool)
-                        .await
-                    {
-                        Ok(_) => {
-                            eprintln!("Deleted partial migration row for {}. Retrying migrations.", version);
-                        }
-                        Err(del_err) => {
-                            eprintln!("Failed to delete partial migration row for {}: {}", version, del_err);
-                            std::process::exit(1);
-                        }
-                    }
-
-                    // Retry migrations once
-                    if let Err(retry_err) = sqlx::migrate!("./migrations").run(&pool).await {
-                        eprintln!("Retry failed: {}", retry_err);
-                        std::process::exit(1);
-                    } else {
-                        println!("Database migrations applied successfully after recovery");
-                    }
+                    delete_and_retry(&pool, version).await;
                 } else {
+                    eprintln!("Migration error (unexpected format): {}", err_str);
                     std::process::exit(1);
                 }
             } else {
+                eprintln!("Migration error (unexpected format): {}", err_str);
+                std::process::exit(1);
+            }
+        }
+        // Also support messages like: "migration 20260123121000 is partially applied; fix and remove row from `_sqlx_migrations` table"
+        else if let Some(idx) = err_str.find("migration ") {
+            let rest = &err_str[idx + "migration ".len()..];
+            // take leading digits as version
+            let version_digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !version_digits.is_empty() && (rest.contains("partially applied") || (rest.contains("previously applied") && rest.contains("modified"))) {
+                delete_and_retry(&pool, &version_digits).await;
+            } else {
+                eprintln!("Migration error (unexpected format): {}", err_str);
                 std::process::exit(1);
             }
         } else {
+            eprintln!("Failed to run database migrations: {}", err_str);
             std::process::exit(1);
         }
     } else {

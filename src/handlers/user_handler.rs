@@ -14,8 +14,8 @@ use validator::Validate;
 use crate::models::user::User;
 
 // Import schemas for creating a user
-use crate::schemas::{RegisterResponseSchema, UserStoreRequestSchema};
-use crate::schemas::user_schema::UserUpdateRequestSchema;
+use crate::schemas::{RegisterResponseSchema, UserStoreRequestSchema, UserUpdateRequestSchema};
+// use crate::schemas::user_schema::UserUpdateRequestSchema;
 
 // Import util response API
 use crate::utils::response::ApiResponse;
