@@ -38,4 +38,10 @@ pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, JwtError> {
     )?;     
     // Return the claims if the token is valid
     Ok(token_data.claims)
+}
+
+// Async helper to generate a token using JWT_SECRET from environment
+pub async fn generate_jwt_token(user_id: i64) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let secret = std::env::var("JWT_SECRET").map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    create_jwt(user_id, &secret).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }   

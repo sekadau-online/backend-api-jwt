@@ -1,2 +1,2 @@
-// pub mod jwt; // JWT utility module (commented out for now)
+pub mod jwt;
 pub mod response;
