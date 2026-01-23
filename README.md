@@ -51,6 +51,34 @@ Examples:
 
 Tip: CORS is configured inside `create_app(..)` so tests and other programmatic runners will share the same behavior as the main server. For production, prefer restricting origins with `CORS_ALLOWED_ORIGINS`.
 
+## 🏗️ Application structure
+
+The app router and middleware are implemented so they can be reused in tests and the running server:
+
+- `src/app.rs`
+  - `build_router()` — build an `axum::Router` **without** a DB connection (useful for unit tests and route-level checks).
+  - `create_app(pool)` — wrap `build_router()` and add `Extension(pool)` for runtime (used by `main.rs`).
+- `src/lib.rs` re-exports `create_app` for convenience (`pub use app::create_app;`).
+
+Why this is useful:
+- **Testability** — call `build_router()` in unit tests to verify route registration and middleware without spinning a database.
+- **Separation of concerns** — routing is separate from runtime wiring (DB, app-level extension).
+
+Example unit test (smoke):
+
+```rust
+#[test]
+fn build_router_smoke() {
+    let _router = backend_api_jwt::app::build_router();
+}
+```
+
+In `main.rs` use `create_app` as before:
+
+```rust
+let app = backend_api_jwt::create_app(db_pool.clone());
+```
+
 ---
 
 ## �🏃 Running the project
