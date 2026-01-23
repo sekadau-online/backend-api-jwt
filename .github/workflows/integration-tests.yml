@@ -85,10 +85,7 @@ jobs:
           APP_HOST: ${{ env.APP_HOST }}
 
       - name: Run integration tests
-        run: |
-          cargo test --test integration_user_store -- --nocapture
-          cargo test --test integration_user_update -- --nocapture
-          cargo test --test integration_login -- --nocapture
+        run: cargo test --tests -- --nocapture
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
           JWT_SECRET: ${{ env.JWT_SECRET }}
