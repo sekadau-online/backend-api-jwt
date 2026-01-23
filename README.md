@@ -42,9 +42,14 @@ JWT_SECRET=<a long secret string>
 By default CORS is **disabled**. To enable it for development or testing you can use environment variables:
 
 - **ENABLE_CORS=true** — enables permissive CORS (allows any origin). Good for local/dev testing.
-- **CORS_ALLOWED_ORIGINS** — optional comma-separated list of allowed origins (e.g. `https://example.com,https://app.example.com`). When set, CORS is enabled. In the current implementation this still falls back to a permissive policy; we can tighten it to strict matching if you prefer.
+- **CORS_ALLOWED_ORIGINS** — a comma-separated list of allowed origins (e.g. `https://app.example.com,https://admin.example.com`), or the special value `*` to allow any origin (permissive).
 
-Tip: CORS is configured inside `create_app(..)` so tests and other programmatic runners will share the same behavior as the main server.
+Examples:
+- `ENABLE_CORS=true` (quick permissive enable)
+- `CORS_ALLOWED_ORIGINS=*` (explicit wildcard — treated as permissive)
+- `CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com` (restrict to specific origins)
+
+Tip: CORS is configured inside `create_app(..)` so tests and other programmatic runners will share the same behavior as the main server. For production, prefer restricting origins with `CORS_ALLOWED_ORIGINS`.
 
 ---
 
