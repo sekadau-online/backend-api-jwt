@@ -19,7 +19,7 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=3
     env:
       DATABASE_URL: mysql://root:${{ secrets.MYSQL_ROOT_PASSWORD }}@127.0.0.1:3306/db_backend_api_jwt_ci
-      JWT_SECRET: test_secret
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
       APP_HOST: 127.0.0.1
 
     steps:
@@ -33,6 +33,15 @@ jobs:
           profile: minimal
           components: clippy
           override: true
+
+      - name: Ensure required secrets present
+        run: |
+          if [ -z "${{ secrets.MYSQL_ROOT_PASSWORD }}" ]; then
+            echo "Missing secret: MYSQL_ROOT_PASSWORD"; exit 1;
+          fi
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then
+            echo "Missing secret: JWT_SECRET"; exit 1;
+          fi
 
       - name: Install MySQL client
         run: sudo apt-get update && sudo apt-get install -y default-mysql-client
@@ -63,8 +72,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Run tests
-        run: cargo test --all -- --nocapture
+      - name: Run unit tests
+        run: cargo test --lib -- --nocapture
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          APP_HOST: ${{ env.APP_HOST }}
+
+      - name: Run integration tests
+        run: |
+          cargo test --test integration_user_store -- --nocapture
+          cargo test --test integration_user_update -- --nocapture
+          cargo test --test integration_login -- --nocapture
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
           JWT_SECRET: ${{ env.JWT_SECRET }}
