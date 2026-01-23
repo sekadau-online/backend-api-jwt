@@ -201,7 +201,19 @@ Server/database error (500) returns structured `data` with `error` and `details`
 ---
 
 ## 🧪 Tests
-Add integration tests to validate handler behavior (suggestion: use a test DB or mock). Running `cargo test` will run available unit tests.
+Add integration tests to validate handler behavior (suggestion: use a test DB or mock). Running `cargo test` will run available unit tests and integration tests.
+
+There is also a focused test file for router-level behavior without requiring a DB:
+
+- `tests/app_router.rs` contains async oneshot tests that exercise CORS preflight behavior using `build_router()` (no DB required). These tests use `tower::util::ServiceExt::oneshot` to dispatch requests to the router.
+
+To run the router-level tests only:
+
+```bash
+cargo test --test app_router
+```
+
+Developer note: `tower` is listed under `dev-dependencies` to enable `oneshot` helpers used in these tests.
 
 ### Using `.env.test` (recommended)
 A sample test environment file `.env.test` is provided. It contains example values for running integration tests locally. **Do not** commit real credentials to this file — replace placeholders with your local test credentials.
@@ -214,7 +226,7 @@ cp .env.test .env
 # create the test database (adjust credentials as needed)
 mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS db_backend_api_jwt_test;"
 # run integration tests
-cargo test --test integration_register
+cargo test --tests
 ```
 
 If `DATABASE_URL` is not set, integration tests will be skipped with a helpful message. This prevents accidental test runs without proper test DB setup.
