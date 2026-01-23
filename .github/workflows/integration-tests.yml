@@ -6,6 +6,7 @@ on:
 
 jobs:
   validate-secrets:
+    environment: test
     runs-on: ubuntu-latest
     steps:
       - name: Check required secrets
@@ -19,6 +20,7 @@ jobs:
 
   integration-tests:
     needs: validate-secrets
+    environment: test
     runs-on: ubuntu-latest
     services:
       mysql:
