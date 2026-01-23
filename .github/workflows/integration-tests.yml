@@ -5,7 +5,20 @@ on:
     branches: [ main, master ]
 
 jobs:
+  validate-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "${{ secrets.MYSQL_ROOT_PASSWORD }}" ]; then
+            echo "Missing secret: MYSQL_ROOT_PASSWORD"; exit 1;
+          fi
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then
+            echo "Missing secret: JWT_SECRET"; exit 1;
+          fi
+
   integration-tests:
+    needs: validate-secrets
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -32,15 +45,6 @@ jobs:
           profile: minimal
           components: clippy
           override: true
-
-      - name: Ensure required secrets present
-        run: |
-          if [ -z "${{ secrets.MYSQL_ROOT_PASSWORD }}" ]; then
-            echo "Missing secret: MYSQL_ROOT_PASSWORD"; exit 1;
-          fi
-          if [ -z "${{ secrets.JWT_SECRET }}" ]; then
-            echo "Missing secret: JWT_SECRET"; exit 1;
-          fi
 
       - name: Install MySQL client
         run: sudo apt-get update && sudo apt-get install -y default-mysql-client
