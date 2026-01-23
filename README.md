@@ -68,6 +68,39 @@ cargo run
 
 3. The server listens on `http://<APP_HOST>:<APP_PORT>` by default (defaults: `APP_HOST=127.0.0.1`, `APP_PORT=3002`). You can configure the bind host via the `APP_HOST` environment variable (set it to `0.0.0.0` to listen on all interfaces).
 
+### Quick run & verify ✅
+
+Start the server in one terminal:
+
+```bash
+cargo run
+```
+
+You should see output similar to:
+
+```
+Compiling backend-api-jwt v0.1.0
+Finished `dev` profile [...]
+Running `target/debug/backend-api-jwt`
+Listening on http://127.0.0.1:3000
+```
+
+Verify the process is listening on the configured port (example uses `ss`):
+
+```bash
+ss -ltnp | grep 3000
+```
+
+Quick CORS preflight test (only if CORS enabled):
+
+```bash
+curl -i -X OPTIONS http://127.0.0.1:3000/register \
+  -H 'Origin: http://example.com' \
+  -H 'Access-Control-Request-Method: POST'
+```
+
+A successful CORS response will contain an `Access-Control-Allow-Origin` header. For simple endpoint checks you can `curl` an existing route; note some routes are protected and require `Authorization`.
+
 ---
 
 ## 📚 Migrations
