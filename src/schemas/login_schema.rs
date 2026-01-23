@@ -12,7 +12,7 @@ pub struct LoginSchema {
 } 
 
 #[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
-pub struct UserResponseSchema {
+pub struct UserLoginResponseSchema {
     pub id: i64,
     pub name: String,
     pub email: String,
@@ -22,6 +22,6 @@ pub struct UserResponseSchema {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResponseSchema {
-    pub user: UserResponseSchema,
+    pub user: UserLoginResponseSchema,
     pub token: String,
-}
+} 

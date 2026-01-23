@@ -10,9 +10,9 @@ use validator::Validate;
 use serde_json::{json, Value};
 
 //import schemas for login request and response
-use crate::schemas::{LoginSchema, LoginResponseSchema, UserResponseSchema};
+use crate::schemas::{LoginSchema, LoginResponseSchema, UserLoginResponseSchema};
 //import util response API
-use crate::utils::response::ApiResponse;
+use crate::utils::response::ApiResponse; 
 //import util JWT generation
 use crate::utils::jwt::generate_jwt_token;
 // Handler for user login
@@ -36,7 +36,7 @@ pub async fn login_handler(
     // Normalize email for consistent lookup
     let email_normalized = payload.email.trim().to_lowercase();
     // Fetch user by email
-    let user_record = sqlx::query_as::<_, UserResponseSchema>(
+    let user_record = sqlx::query_as::<_, UserLoginResponseSchema>(
         r#"
         SELECT id, name, email, created_at, updated_at
         FROM users
