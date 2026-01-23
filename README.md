@@ -37,7 +37,18 @@ JWT_SECRET=<a long secret string>
 
 ---
 
-## 🏃 Running the project
+## � CORS configuration 🔁
+
+By default CORS is **disabled**. To enable it for development or testing you can use environment variables:
+
+- **ENABLE_CORS=true** — enables permissive CORS (allows any origin). Good for local/dev testing.
+- **CORS_ALLOWED_ORIGINS** — optional comma-separated list of allowed origins (e.g. `https://example.com,https://app.example.com`). When set, CORS is enabled. In the current implementation this still falls back to a permissive policy; we can tighten it to strict matching if you prefer.
+
+Tip: CORS is configured inside `create_app(..)` so tests and other programmatic runners will share the same behavior as the main server.
+
+---
+
+## �🏃 Running the project
 1. Start MySQL and create the database:
 
 ```bash
@@ -141,6 +152,19 @@ cargo test --test integration_register
 ```
 
 If `DATABASE_URL` is not set, integration tests will be skipped with a helpful message. This prevents accidental test runs without proper test DB setup.
+
+---
+
+## 🚀 CI / GitHub Actions (Integration tests)
+
+We include a GitHub Actions workflow that runs integration tests against a MySQL service. To run the workflow, set these repository secrets:
+
+- **MYSQL_ROOT_PASSWORD** (required) — root password for the MySQL service used by the workflow
+- **JWT_SECRET** (required) — secret used to sign tokens during tests
+
+The workflow also relies on `DATABASE_URL` being set inside the job (the workflow builds this from `MYSQL_ROOT_PASSWORD`). The job will fail fast if required secrets are missing.
+
+Tip: Use `gh secret set NAME --body 'value' --repo OWNER/REPO` to add secrets via the GitHub CLI.
 
 ---
 

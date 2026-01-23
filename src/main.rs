@@ -21,7 +21,7 @@ async fn main() {
     // Establish database connection (and run migrations)
     let db_pool = config::database::establish_connection().await;
 
-    // Create the application router using library helper
+    // Create the application router using library helper (CORS will be configured there based on env)
     let app = create_app(db_pool.clone());
 
     // PORT from environment variable or default to 3000
