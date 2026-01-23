@@ -91,7 +91,7 @@ async fn user_update_flow() {
 
     // Unauthorized (no token)
     let res_unauth = client
-        .post(&url)
+        .put(&url)
         .json(&json!({"name": "ShouldNotWork"}))
         .send()
         .await
@@ -100,7 +100,7 @@ async fn user_update_flow() {
 
     // Valid update
     let res = client
-        .post(&url)
+        .put(&url)
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({"name": "Updated Name", "email": "updated@example.com"}))
         .send()

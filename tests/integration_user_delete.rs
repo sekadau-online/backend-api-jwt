@@ -1,5 +1,4 @@
 use backend_api_jwt::create_app;
-use serde_json::json;
 use sqlx::{MySqlPool, Executor};
 use tokio::time::{sleep, Duration};
 
