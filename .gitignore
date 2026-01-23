@@ -1,5 +1,6 @@
 /target
 .env
+.env.test
 .DS_Store
 .idea
 .vscode

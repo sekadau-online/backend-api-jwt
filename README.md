@@ -27,7 +27,9 @@ Create a `.env` file in project root (do not commit it). Required variables:
 
 ```env
 APP_PORT=3000
-DATABASE_URL=mysql://user:password@localhost:3306/db_backend_api_jwt
+DATABASE_URL=mysql://user:password@<DB_HOST>:3306/db_backend_api_jwt
+# Alternatively set DB_HOST and compose DATABASE_URL in your shell:
+# export DB_HOST=127.0.0.1 && export DATABASE_URL="mysql://user:password@$DB_HOST:3306/db_backend_api_jwt"
 JWT_SECRET=<a long secret string>
 ```
 
@@ -48,7 +50,7 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS db_backend_api_jwt;"
 cargo run
 ```
 
-3. The server listens on `http://127.0.0.1:3000` by default.
+3. The server listens on `http://<APP_HOST>:<APP_PORT>` by default (defaults: `APP_HOST=127.0.0.1`, `APP_PORT=3002`). You can configure the bind host via the `APP_HOST` environment variable (set it to `0.0.0.0` to listen on all interfaces).
 
 ---
 
@@ -123,6 +125,22 @@ Server/database error (500) returns structured `data` with `error` and `details`
 
 ## 🧪 Tests
 Add integration tests to validate handler behavior (suggestion: use a test DB or mock). Running `cargo test` will run available unit tests.
+
+### Using `.env.test` (recommended)
+A sample test environment file `.env.test` is provided. It contains example values for running integration tests locally. **Do not** commit real credentials to this file — replace placeholders with your local test credentials.
+
+Example usage:
+
+```bash
+# copy the template to .env so dotenvy picks it up
+cp .env.test .env
+# create the test database (adjust credentials as needed)
+mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS db_backend_api_jwt_test;"
+# run integration tests
+cargo test --test integration_register
+```
+
+If `DATABASE_URL` is not set, integration tests will be skipped with a helpful message. This prevents accidental test runs without proper test DB setup.
 
 ---
 

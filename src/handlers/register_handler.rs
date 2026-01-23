@@ -78,6 +78,25 @@ pub async fn register_handler(
         Ok(res) => res.last_insert_id() as i64,
         Err(e) => {
             // If another transaction inserted the same email in the meantime, translate that to Conflict if duplicate entry
+            // Prefer matching the database error code when available (e.g., MySQL 1062)
+            match &e {
+                sqlx::Error::Database(db_err) => {
+                    if let Some(code) = db_err.code() {
+                        if code == "1062" {
+                            let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+                            return (StatusCode::CONFLICT, Json(response));
+                        }
+                    }
+                    let msg = db_err.message().to_string();
+                    if msg.to_lowercase().contains("duplicate") {
+                        let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+                        return (StatusCode::CONFLICT, Json(response));
+                    }
+                }
+                _ => {}
+            }
+
+            // Fallback to string checks (older behavior)
             let e_str = e.to_string();
             if e_str.contains("1062") || e_str.to_lowercase().contains("duplicate") {
                 let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
