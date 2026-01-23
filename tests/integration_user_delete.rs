@@ -22,7 +22,11 @@ async fn user_delete_flow() {
 
     let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
     admin_pool
-        .execute(format!("CREATE DATABASE IF NOT EXISTS {}", test_db).as_str())
+        .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
+        .await
+        .expect("drop test db");
+    admin_pool
+        .execute(format!("CREATE DATABASE {}", test_db).as_str())
         .await
         .expect("create test db");
 

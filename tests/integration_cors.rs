@@ -13,7 +13,8 @@ async fn cors_wildcard_allows_any_origin() {
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_cors";
     let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
-    admin_pool.execute(format!("CREATE DATABASE IF NOT EXISTS {}", test_db).as_str()).await.expect("create test db");
+    admin_pool.execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str()).await.expect("drop test db");
+    admin_pool.execute(format!("CREATE DATABASE {}", test_db).as_str()).await.expect("create test db");
     let test_db_url = format!("{}/{}", admin_url, test_db);
     let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
     sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
@@ -65,7 +66,8 @@ async fn cors_specific_origins() {
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_cors2";
     let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
-    admin_pool.execute(format!("CREATE DATABASE IF NOT EXISTS {}", test_db).as_str()).await.expect("create test db");
+    admin_pool.execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str()).await.expect("drop test db");
+    admin_pool.execute(format!("CREATE DATABASE {}", test_db).as_str()).await.expect("create test db");
     let test_db_url = format!("{}/{}", admin_url, test_db);
     let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
     sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");

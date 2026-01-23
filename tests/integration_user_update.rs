@@ -22,10 +22,14 @@ async fn user_update_flow() {
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_update";
 
-    // connect as admin and create test database
+    // connect as admin and recreate a clean test database
     let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
     admin_pool
-        .execute(format!("CREATE DATABASE IF NOT EXISTS {}", test_db).as_str())
+        .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
+        .await
+        .expect("drop test db");
+    admin_pool
+        .execute(format!("CREATE DATABASE {}", test_db).as_str())
         .await
         .expect("create test db");
 
