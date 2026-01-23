@@ -1,0 +1,41 @@
+use jsonwebtoken::{
+    encode, decode, Header, EncodingKey, DecodingKey, Validation, errors::Error as JwtError
+};
+use serde::{Serialize, Deserialize};
+use chrono::{Utc, Duration};
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Claims {
+    pub sub: i64, // user id
+    pub exp: usize,
+}
+
+//function to create a JWT token
+pub fn create_jwt(user_id: i64, secret: &str) -> Result<String, JwtError> {
+    // Set expiration to 24 hours from now
+    let expiration = Utc::now()
+        .checked_add_signed(Duration::hours(24))
+        .unwrap()
+        .timestamp() as usize;
+
+// Create the claims
+    encode(
+        &Header::default(),
+        &Claims {
+            sub: user_id,
+            exp: expiration,
+        },
+        &EncodingKey::from_secret(secret.as_ref()),
+    )
+}
+
+//function to decode and validate a JWT token
+pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, JwtError> {
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_ref()),
+        &Validation::default(),
+    )?;     
+    // Return the claims if the token is valid
+    Ok(token_data.claims)
+}   

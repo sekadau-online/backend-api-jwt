@@ -3,17 +3,26 @@ use std::net::SocketAddr;
 use dotenvy::dotenv;
 
 mod config;
+mod routes;
+mod handlers;
+mod schemas;
+mod utils;
 
 #[tokio::main]
 async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
-    // Establish database connection
+
+    // Initialize tracing for structured logs
+    tracing_subscriber::fmt::init();
+
+    // Establish database connection (and run migrations)
     let _db_pool = config::database::establish_connection().await;
 
     // Create the application router
     let app = Router::new()
-        .layer(Extension(_db_pool)); // Add any necessary extensions here
+        .merge(routes::auth_routes::auth_routes())
+        .layer(Extension(_db_pool));
 
     // PORT from environment variable or default to 3000
     let port: u16 = std::env::var("APP_PORT")
