@@ -44,4 +44,10 @@ pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, JwtError> {
 pub async fn generate_jwt_token(user_id: i64) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let secret = std::env::var("JWT_SECRET").map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
     create_jwt(user_id, &secret).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+}
+
+// Async helper to verify a token using JWT_SECRET and return Claims
+pub async fn verify_jwt_token(token: &str) -> Result<Claims, Box<dyn std::error::Error + Send + Sync>> {
+    let secret = std::env::var("JWT_SECRET").map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    decode_jwt(token, &secret).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }   

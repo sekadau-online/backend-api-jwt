@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
 pub struct User {
     pub id: i64,
     pub name: String,

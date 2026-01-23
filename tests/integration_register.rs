@@ -1,7 +1,6 @@
 use backend_api_jwt::create_app;
 use serde_json::json;
-use sqlx::{MySql, MySqlPool, Executor};
-use std::net::SocketAddr;
+use sqlx::{MySqlPool, Executor};
 use tokio::time::{sleep, Duration};
 
 #[tokio::test]
