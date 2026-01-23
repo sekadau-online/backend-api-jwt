@@ -1,0 +1,71 @@
+name: Integration tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=3
+    env:
+      DATABASE_URL: mysql://root:${{ secrets.MYSQL_ROOT_PASSWORD }}@127.0.0.1:3306/db_backend_api_jwt_ci
+      JWT_SECRET: test_secret
+      APP_HOST: 127.0.0.1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: clippy
+          override: true
+
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..30}; do
+            if mysql -uroot -p${{ secrets.MYSQL_ROOT_PASSWORD }} -h127.0.0.1 -e 'SELECT 1' >/dev/null 2>&1; then
+              echo 'MySQL ready'
+              break
+            fi
+            echo 'Waiting for MySQL...'
+            sleep 2
+          done
+
+      - name: Create test database
+        run: |
+          mysql -uroot -p${{ secrets.MYSQL_ROOT_PASSWORD }} -h127.0.0.1 -e "CREATE DATABASE IF NOT EXISTS db_backend_api_jwt_ci;"
+
+      - name: Cache cargo registry, git and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --all -- --nocapture
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+          APP_HOST: ${{ env.APP_HOST }}
