@@ -1,4 +1,4 @@
-# backend-api-jwt
+# backend-api-jwt_v1
 
 **Rust backend API** with JWT auth helpers, registration handler, input validation, and automatic database migrations. 🚀
 
