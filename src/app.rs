@@ -1,6 +1,6 @@
-use axum::Router;
+use axum::{Router, Extension};
 use sqlx::MySqlPool;
-use axum::Extension;
+// use axum::Extension;
 
 pub fn build_router() -> Router {
     use tower_http::cors::{CorsLayer, Any};
