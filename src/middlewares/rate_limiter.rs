@@ -57,8 +57,18 @@ fn get_config() -> (f64, f64, String, String, u64, f64) {
         return read_config();
     }
     let mut c = CONFIG_CACHE.lock();
-    if c.last_refresh.elapsed() > Duration::from_secs(1) {
-        let (rate, burst, key_priority, action, ttl, request_cost) = read_config();
+    // Always read env to detect on-the-fly changes quickly (necessary for integration tests
+    // which set env vars between tests). Update cache if values changed or when the
+    // refresh interval expired.
+    let (rate, burst, key_priority, action, ttl, request_cost) = read_config();
+    if c.last_refresh.elapsed() > Duration::from_secs(1)
+        || rate != c.rate
+        || burst != c.burst
+        || key_priority != c.key_priority
+        || action != c.action
+        || ttl != c.ttl_secs
+        || request_cost != c.request_cost
+    {
         c.rate = rate;
         c.burst = burst;
         c.key_priority = key_priority;
