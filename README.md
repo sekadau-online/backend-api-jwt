@@ -294,6 +294,34 @@ Notes:
 - Do **not** set `TRUSTED_PROXIES=0.0.0.0/0` in production — this trusts all upstreams and allows IP spoofing.
 - The middleware populates an extension `ClientIp` so other middleware (rate limiter, auth) can use the resolved IP.
 
+### Fetch Cloudflare IP ranges & verify setup 🔍
+- Fetch Cloudflare's current IP lists (IPv4 and IPv6):
+```bash
+curl -fsS https://www.cloudflare.com/ips-v4 -o -
+curl -fsS https://www.cloudflare.com/ips-v6 -o -
+```
+- Update `TRUSTED_PROXIES` quickly (example writes to `.env`):
+```bash
+# join ranges with commas and write/update .env
+CF4=$(curl -fsS https://www.cloudflare.com/ips-v4 | paste -s -d, -)
+CF6=$(curl -fsS https://www.cloudflare.com/ips-v6 | paste -s -d, -)
+sed -i "/^TRUSTED_PROXIES=/c\TRUSTED_PROXIES=${CF4},${CF6}" .env || echo "TRUSTED_PROXIES=${CF4},${CF6}" >> .env
+```
+- Quick runtime check (local dev): send a request simulating Cloudflare header and inspect `x-key-source` header:
+```bash
+# send request with cf header and show response headers
+curl -I -H "cf-connecting-ip: 203.0.113.55" http://127.0.0.1:${APP_PORT:-8000}/users
+# expect: x-key-source: cf-connecting-ip (if TRUSTED_PROXIES contains the proxy that sent the request)
+```
+- Inspect rate-limiter buckets (requires `RATE_LIMIT_DEBUG=true` and `RATE_LIMIT_DEBUG_TOKEN`):
+```bash
+curl -H "Authorization: Bearer $RATE_LIMIT_DEBUG_TOKEN" http://127.0.0.1:${APP_PORT:-8000}/debug/rate_limiter | jq .
+```
+
+Notes:
+- Include IPv6 ranges from Cloudflare if you accept IPv6 traffic (e.g. `2400:cb00::/32`, `2606:4700::/32`, ...).
+- Update these ranges periodically — Cloudflare may add/change ranges.
+
 ---
 
 ## Operational notes
