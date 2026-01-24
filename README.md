@@ -93,7 +93,10 @@ mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS db_backend_api_jwt;"
 ```bash
 cargo run
 ```
-
+or run with watch 
+```bash
+cargo watch -q -c -w src/ -x run
+```
 3. The server listens on `http://<APP_HOST>:<APP_PORT>` by default (defaults: `APP_HOST=127.0.0.1`, `APP_PORT=3002`). You can configure the bind host via the `APP_HOST` environment variable (set it to `0.0.0.0` to listen on all interfaces).
 
 ### Quick run & verify ✅

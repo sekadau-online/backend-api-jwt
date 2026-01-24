@@ -309,18 +309,34 @@ fn ensure_cleaner_started(ttl_secs: u64) {
 }
 
 async fn purge_stale_buckets(ttl_secs: u64) {
+    println!("DEBUG: purge_stale_buckets: start ttl={} buckets_before={}", ttl_secs, BUCKETS.len());
     let now = Instant::now();
+    let mut removed_count = 0usize;
     let keys: Vec<String> = BUCKETS.iter().map(|r| r.key().clone()).collect();
     for k in keys {
-        if let Some(entry) = BUCKETS.get(&k) {
+        // Read the bucket and determine if it should be removed while holding only
+        // the bucket's internal mutex. Ensure we drop the DashMap guard before
+        // mutating the map to avoid deadlocks.
+        let should_remove = if let Some(entry) = BUCKETS.get(&k) {
             let bucket = entry.value().lock();
-            if now.duration_since(bucket.last_access).as_secs() >= ttl_secs {
-                drop(bucket);
-                BUCKETS.remove(&k);
+            let res = now.duration_since(bucket.last_access).as_secs() >= ttl_secs;
+            // drop bucket and entry guard before mutating the map
+            drop(bucket);
+            drop(entry);
+            res
+        } else {
+            false
+        };
+
+        if should_remove {
+            if BUCKETS.remove(&k).is_some() {
+                removed_count += 1;
                 tracing::info!("rate_limiter: purged stale bucket key={}", k);
             }
         }
     }
+
+    println!("DEBUG: purge_stale_buckets: done removed={} buckets_after={}", removed_count, BUCKETS.len());
 }
 
 // Test helper to purge once (exposed for integration tests)

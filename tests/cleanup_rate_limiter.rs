@@ -23,11 +23,14 @@ async fn purge_removes_stale_buckets() {
     // create bucket for 1.2.3.4
     let req = Request::builder().uri("/").header("x-forwarded-for", "1.2.3.4").body(Body::empty()).unwrap();
     let _ = app.clone().oneshot(req).await.unwrap();
+    println!("TEST: created bucket for 1.2.3.4");
 
     // Manually set bucket last_access to far past
     // Access internal BUCKETS via debug endpoint to confirm there is at least one bucket
     // Call purge once
+    println!("TEST: calling purge_stale_buckets_once(0)");
     purge_stale_buckets_once(0).await; // ttl=0 will remove everything older than 0s
+    println!("TEST: returned from purge_stale_buckets_once");
 
     // call debug endpoint with token (test-mode)
     unsafe { std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken"); }
