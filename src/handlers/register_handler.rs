@@ -4,7 +4,6 @@ use axum::{
     http::StatusCode,
 };
 use sqlx::MySqlPool;
-use bcrypt::hash;
 use validator::Validate;
 use serde_json::json;
 use crate::utils::handler::HandlerResult;
@@ -49,11 +48,19 @@ pub async fn register_handler(
         return Err((StatusCode::CONFLICT, Json(response)));
     }
 
-    // Hash the password
-    let hashed_password = hash(&payload.password, 4).map_err(|_| {
-        let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
-        (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
-    })?;
+    // Hash the password in a blocking thread to avoid blocking the async runtime
+    let pw_to_hash = payload.password.clone();
+    let hashed_password = match tokio::task::spawn_blocking(move || bcrypt::hash(&pw_to_hash, 4)).await {
+        Ok(Ok(h)) => h,
+        Ok(Err(_)) => {
+            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+        }
+        Err(join_err) => {
+            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password", "details": join_err.to_string() }));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+        }
+    };
 
     // Insert the new user into the database
     let res = sqlx::query(
