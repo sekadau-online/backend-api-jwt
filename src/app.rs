@@ -44,6 +44,9 @@ pub fn build_router() -> Router {
         app = app.layer(cors_layer);
     }
 
+    // Rate limiter middleware (per IP)
+    app = app.layer(axum::middleware::from_fn(crate::middlewares::rate_limiter::rate_limiter));
+
     app
 }
 

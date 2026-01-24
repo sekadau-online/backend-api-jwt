@@ -233,6 +233,27 @@ If `DATABASE_URL` is not set, integration tests will be skipped with a helpful m
 
 ---
 
+## Rate limiting
+This service includes an in-memory per-IP token-bucket rate limiter middleware to protect from request floods in single-instance deployments.
+
+Configuration (via environment variables):
+- `RATE_LIMIT_RPS` — allowed requests per second per IP (default: 100)
+- `RATE_LIMIT_BURST` — burst capacity per IP (default: `RATE_LIMIT_RPS * 2`)
+
+Notes:
+- The built-in implementation is in `src/middlewares/rate_limiter.rs` and is suitable for single instance deployments. For multi-instance setups, use a centralized rate limiter (Redis, API Gateway) to coordinate limits across replicas.
+- Update `.env` or set the variables in your environment when running load tests to avoid unexpectedly triggered limits.
+
+Example (increase limits for performance testing):
+
+```bash
+# set a higher per-IP rate for a controlled load test
+export RATE_LIMIT_RPS=500
+export RATE_LIMIT_BURST=1000
+```
+
+---
+
 ## 🚀 CI / GitHub Actions (Integration tests)
 
 We include a GitHub Actions workflow that runs integration tests against a MySQL service. To run the workflow, set these repository secrets:

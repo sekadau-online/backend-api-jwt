@@ -6,8 +6,14 @@ pub async fn establish_connection() -> Result<MySqlPool, Box<dyn Error + Send + 
     let database_url = std::env::var("DATABASE_URL").map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
 
     // Create and return the MySQL connection pool
+    let pool_size: u32 = std::env::var("DB_POOL_SIZE").ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+
+    println!("Using DB pool size: {}", pool_size);
+
     let pool = MySqlPoolOptions::new()
-        .max_connections(5)
+        .max_connections(pool_size)
         .connect(&database_url)
         .await
         .map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
