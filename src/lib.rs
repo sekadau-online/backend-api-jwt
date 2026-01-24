@@ -9,3 +9,6 @@ pub mod models;
 pub mod app;
 
 pub use app::create_app;
+
+// Test helpers available to integration tests.
+pub mod test_helpers;

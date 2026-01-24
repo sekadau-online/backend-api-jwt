@@ -19,11 +19,10 @@ async fn proxy_trusted_uses_header_source() {
     dotenvy::dotenv().ok();
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(v) => v,
-        Err(_) => {
-            eprintln!("Skipping integration test: set DATABASE_URL in your environment");
-            return;
-        }
+        Err(_) => { eprintln!("Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)"); return; }
     };
+    // Make rate limiter permissive for this test and purge buckets
+    backend_api_jwt::test_helpers::make_rate_limiter_permissive_and_purge().await;
 
     let (base, _db) = database_url.rsplit_once('/').expect("DATABASE_URL should include db name");
     let admin_url = base.to_string();
@@ -78,6 +77,14 @@ async fn proxy_not_trusted_uses_header_directly() {
     // Clear trusted proxies
     unsafe { std::env::set_var("TRUSTED_PROXIES", ""); }
     backend_api_jwt::middlewares::proxy::set_trusted_proxies("");
+
+    // Ensure rate limiter permissive for this test and purge any existing buckets
+    unsafe {
+        std::env::set_var("RATE_LIMIT_RPS", "10000");
+        std::env::set_var("RATE_LIMIT_BURST", "20000");
+        std::env::set_var("RATE_LIMIT_REQUEST_COST", "0.2");
+    }
+    backend_api_jwt::middlewares::rate_limiter::purge_stale_buckets_once(0).await;
 
     dotenvy::dotenv().ok();
     let database_url = match std::env::var("DATABASE_URL") {

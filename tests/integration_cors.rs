@@ -22,6 +22,9 @@ async fn cors_wildcard_allows_any_origin() {
     // enable permissive CORS
     unsafe { std::env::set_var("CORS_ALLOWED_ORIGINS", "*"); }
 
+    // Make rate limiter permissive for this test and purge buckets
+    backend_api_jwt::test_helpers::make_rate_limiter_permissive_and_purge().await;
+
     let app = create_app(pool.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = listener.local_addr().unwrap();
@@ -74,6 +77,9 @@ async fn cors_specific_origins() {
 
     // set specific origins
     unsafe { std::env::set_var("CORS_ALLOWED_ORIGINS", "http://allowed.example.com,https://foo.bar"); }
+
+    // Make rate limiter permissive for this test and purge buckets
+    backend_api_jwt::test_helpers::make_rate_limiter_permissive_and_purge().await;
 
     let app = create_app(pool.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");

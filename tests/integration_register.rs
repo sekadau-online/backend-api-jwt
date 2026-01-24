@@ -29,6 +29,14 @@ async fn register_flow() {
         .await
         .expect("create test db");
 
+    // Test-local: make rate limiter permissive and purge buckets to avoid flakes
+    unsafe {
+        std::env::set_var("RATE_LIMIT_RPS", "10000");
+        std::env::set_var("RATE_LIMIT_BURST", "20000");
+        std::env::set_var("RATE_LIMIT_REQUEST_COST", "0.2");
+    }
+    backend_api_jwt::middlewares::rate_limiter::purge_stale_buckets_once(0).await;
+
     let test_db_url = format!("{}/{}", admin_url, test_db);
 
     // connect to test db and run migrations
@@ -139,6 +147,9 @@ async fn register_validation_errors() {
         .execute(format!("CREATE DATABASE {}", test_db).as_str())
         .await
         .expect("create test db");
+
+    // Make rate limiter permissive for this test and purge buckets
+    backend_api_jwt::test_helpers::make_rate_limiter_permissive_and_purge().await;
 
     let test_db_url = format!("{}/{}", admin_url, test_db);
 

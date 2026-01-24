@@ -64,6 +64,9 @@ async fn login_flow() {
         .expect("insert user");
 
     // Build app and run server on ephemeral port
+    // Make rate limiter permissive for this test and purge buckets
+    backend_api_jwt::test_helpers::make_rate_limiter_permissive_and_purge().await;
+
     let app = create_app(pool.clone());
 
     // Bind to an ephemeral port using tokio listener (host from APP_HOST)
