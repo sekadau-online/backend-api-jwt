@@ -9,7 +9,7 @@ use validator::Validate;
 use serde_json::json;
 
 // Import schemas request and response register
-use crate::schemas::{RegisterSchema, RegisterResponseSchema};
+use crate::schemas::register_schema::{RegisterSchema, RegisterResponseSchema};
 // Import util response API
 use crate::utils::response::ApiResponse;
 

@@ -14,7 +14,7 @@ use validator::Validate;
 use crate::models::user::User;
 
 // Import schemas for creating a user
-use crate::schemas::{RegisterResponseSchema, UserStoreRequestSchema, UserUpdateRequestSchema};
+use crate::schemas::user_schema::{UserResponseSchema, UserStoreRequestSchema, UserUpdateRequestSchema};
 // use crate::schemas::user_schema::UserUpdateRequestSchema;
 
 // Import util response API
@@ -138,7 +138,7 @@ pub async fn store(
     };
 
     // Fetch the newly created user
-    let user = match sqlx::query_as::<_, RegisterResponseSchema>(
+    let user = match sqlx::query_as::<_, UserResponseSchema>(
         r#"
         SELECT id, name, email, created_at, updated_at
         FROM users
@@ -164,7 +164,7 @@ pub async fn show(
     axum::extract::Path(user_id): axum::extract::Path<i64>,
 ) -> (StatusCode, Json<ApiResponse<Value>>) {
     // Fetch user by ID
-    let user_result = sqlx::query_as::<_, RegisterResponseSchema>(
+    let user_result = sqlx::query_as::<_, UserResponseSchema>(
         r#"
         SELECT id, name, email, created_at, updated_at
         FROM users

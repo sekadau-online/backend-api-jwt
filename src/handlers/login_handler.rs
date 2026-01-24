@@ -10,7 +10,7 @@ use validator::Validate;
 use serde_json::{json, Value};
 
 //import schemas for login request and response
-use crate::schemas::{LoginSchema, LoginResponseSchema, UserLoginResponseSchema};
+use crate::schemas::login_schema::{LoginSchema, LoginResponseSchema, UserLoginResponseSchema};
 //import util response API
 use crate::utils::response::ApiResponse; 
 //import util JWT generation
