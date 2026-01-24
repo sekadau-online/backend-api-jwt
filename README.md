@@ -240,13 +240,30 @@ If `DATABASE_URL` is not set, integration tests will be skipped with a helpful m
 This service includes an in-memory per-IP token-bucket rate limiter middleware to protect from request floods in single-instance deployments.
 
 Configuration (via environment variables):
-- `RATE_LIMIT_RPS` — allowed requests per second per IP (default: 100)
-- `RATE_LIMIT_BURST` — burst capacity per IP (default: `RATE_LIMIT_RPS * 2`)
+- `RATE_LIMIT_RPS` — allowed token refill rate per second per key (default: 100)
+- `RATE_LIMIT_BURST` — maximum tokens the bucket can hold (default: `RATE_LIMIT_RPS * 2`)
 - `RATE_LIMIT_REQUEST_COST` — cost (float) consumed per request (default: `1.0`). Use values < 1.0 to allow higher effective throughput per key (useful when many clients are aggregated into a single IP behind NAT or an edge). Note: this changes token consumption, not how shortages are reported (see `RATE_LIMIT_ACTION`).
+- `RATE_LIMIT_ACTION` — action when a bucket is empty (supported: `drop` = close/204, `throttle` = 429). Default: `drop`.
+- `RATE_LIMIT_DEBUG` — `true` to expose `/debug/rate_limiter` endpoint for inspection (use only in dev/test). Protect with `RATE_LIMIT_DEBUG_TOKEN`.
+- `RATE_LIMIT_DEBUG_TOKEN` — bearer token used to authorize access to `/debug/rate_limiter` if `RATE_LIMIT_DEBUG=true`.
 
 Notes:
-- The built-in implementation is in `src/middlewares/rate_limiter.rs` and is suitable for single instance deployments. For multi-instance setups, use a centralized rate limiter (Redis, API Gateway) to coordinate limits across replicas.
-- Update `.env` or set the variables in your environment when running load tests to avoid unexpectedly triggered limits.
+- The implementation lives in `src/middlewares/rate_limiter.rs` and is intended for single-instance deployments. For multi-instance setups, use a centralized rate limiter (Redis, API Gateway) to coordinate limits across replicas.
+- When running load tests, tune `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`, and `RATE_LIMIT_REQUEST_COST` so you test the backend behavior and not the rate limiter itself.
+
+Quick local troubleshooting:
+- Enable debug endpoint for testing:
+
+```bash
+export RATE_LIMIT_DEBUG=true
+export RATE_LIMIT_DEBUG_TOKEN=<a-secret-token>
+```
+
+- Inspect current buckets (from a trusted host):
+
+```bash
+curl -H "Authorization: Bearer $RATE_LIMIT_DEBUG_TOKEN" http://127.0.0.1:8000/debug/rate_limiter | jq .
+```
 
 Example (increase limits for performance testing):
 
@@ -257,6 +274,9 @@ export RATE_LIMIT_BURST=1000
 # reduce per-request cost to 0.2 (effectively increase capacity x5)
 export RATE_LIMIT_REQUEST_COST=0.2
 ```
+
+For aggressive testing you can temporarily reduce `RATE_LIMIT_REQUEST_COST` to make a key more permissive or lower `RATE_LIMIT_BURST`/`RATE_LIMIT_RPS` to more easily reproduce blocking behavior during a short test.
+
 
 ---
 
