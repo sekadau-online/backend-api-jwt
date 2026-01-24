@@ -47,6 +47,16 @@ pub fn build_router() -> Router {
     // Rate limiter middleware (per IP)
     app = app.layer(axum::middleware::from_fn(crate::middlewares::rate_limiter::rate_limiter));
 
+    // Proxy header middleware (resolve client IP behind proxies such as Cloudflare)
+    // NOTE: this must be outermost (added last) so it runs before the rate limiter and sets the `ClientIp` extension
+    app = app.layer(axum::middleware::from_fn(crate::middlewares::proxy::proxy_middleware));
+
+    // Optional debug endpoint for the rate limiter (only enabled when RATE_LIMIT_DEBUG=true)
+    if std::env::var("RATE_LIMIT_DEBUG").map(|v| v == "true").unwrap_or(false) {
+        use axum::routing::get;
+        app = app.route("/debug/rate_limiter", get(crate::middlewares::rate_limiter::debug_info));
+    }
+
     app
 }
 

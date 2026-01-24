@@ -239,6 +239,7 @@ This service includes an in-memory per-IP token-bucket rate limiter middleware t
 Configuration (via environment variables):
 - `RATE_LIMIT_RPS` — allowed requests per second per IP (default: 100)
 - `RATE_LIMIT_BURST` — burst capacity per IP (default: `RATE_LIMIT_RPS * 2`)
+- `RATE_LIMIT_REQUEST_COST` — cost (float) consumed per request (default: `1.0`). Use values < 1.0 to allow higher effective throughput per key (useful when many clients are aggregated into a single IP behind NAT or an edge). Note: this changes token consumption, not how shortages are reported (see `RATE_LIMIT_ACTION`).
 
 Notes:
 - The built-in implementation is in `src/middlewares/rate_limiter.rs` and is suitable for single instance deployments. For multi-instance setups, use a centralized rate limiter (Redis, API Gateway) to coordinate limits across replicas.
@@ -250,8 +251,49 @@ Example (increase limits for performance testing):
 # set a higher per-IP rate for a controlled load test
 export RATE_LIMIT_RPS=500
 export RATE_LIMIT_BURST=1000
+# reduce per-request cost to 0.2 (effectively increase capacity x5)
+export RATE_LIMIT_REQUEST_COST=0.2
 ```
 
+---
+
+## Proxy / Cloudflare
+When running behind proxies (e.g., Cloudflare), the app can resolve the originating client IP from the request headers. To avoid spoofing, configure a trusted proxy list:
+
+- `TRUSTED_PROXIES` — comma-separated list of CIDRs to trust (e.g. Cloudflare IP ranges). Only when a request comes from a trusted proxy will the middleware honor `CF-Connecting-IP`, `X-Forwarded-For`, or `X-Real-IP` headers.
+
+Example (trust Cloudflare ranges in production):
+```bash
+export TRUSTED_PROXIES="173.245.48.0/20,103.21.244.0/22,103.22.200.0/22"
+```
+
+Notes:
+- Do **not** set `TRUSTED_PROXIES=0.0.0.0/0` in production — this trusts all upstreams and allows IP spoofing.
+- The middleware populates an extension `ClientIp` so other middleware (rate limiter, auth) can use the resolved IP.
+
+---
+
+## Operational notes
+Some operational tips and recommended settings for running under load:
+
+- DB connection pool size (`DB_POOL_SIZE`): set in `.env` (default 20). Tune to your MySQL `max_connections` and total number of app instances (e.g., `DB_POOL_SIZE * instances <= max_connections`).
+
+- File descriptor limit (NOFILE): high concurrency and many sockets may hit OS limits ("Too many open files"). Increase limits if needed:
+  - For quick testing: `ulimit -n 65536` before starting the process
+  - For systemd services, set permanently via an override:
+    ```ini
+    [Service]
+    LimitNOFILE=65536
+    ```
+    then `sudo systemctl daemon-reload && sudo systemctl restart your-service`
+
+- Redis-backed rate limiting (recommended for multi-instance): consider a Redis-based limiter using an atomic Lua script for consistent global limits. See `src/middlewares` if you want to add a Redis POC.
+
+- k6 load testing tips:
+  - Use staged ramps and increase VUs gradually (e.g., 50→100→200) — avoid jumping to 1000 VUs on a single instance.
+  - Use a shared test user for write-heavy flows, or reduce write rate to avoid DB contention during load tests.
+
+These configuration defaults and checks help avoid common saturation issues (DB connection exhaustion, FD limits, spike-related timeouts).
 ---
 
 ## 🚀 CI / GitHub Actions (Integration tests)
