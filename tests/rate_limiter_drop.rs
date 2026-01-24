@@ -34,8 +34,8 @@ async fn rate_limiter_drop_behavior() {
     let resp2 = app.clone().oneshot(req2).await.unwrap();
     assert_eq!(resp2.status().as_u16(), 204);
     let header_val = resp2.headers().get("x-key-source").unwrap().to_str().unwrap();
-    // key source is normalized to 'ip' for X-Forwarded-For and peer-derived IPs
-    assert_eq!(header_val, "ip");
+    // key source reflects the specific header used (here: x-forwarded-for)
+    assert_eq!(header_val, "x-forwarded-for");
     let key_type = resp2.headers().get("x-key-type").unwrap().to_str().unwrap();
     assert_eq!(key_type, "ip");
 }

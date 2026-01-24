@@ -86,12 +86,22 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
     // Determine key priority: can prefer auth token or ip. Supported values: "ip" (default), "auth", "auth+ip"
     // key_priority read via cached config (get_config)
 
-    // Gather possible sources
-    let ip_source = req.extensions().get::<crate::middlewares::proxy::ClientIp>().map(|c| c.0.to_string())
-        .or_else(|| req.headers().get("cf-connecting-ip").and_then(|v| v.to_str().ok()).map(|s| s.to_string()))
-        .or_else(|| req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|s| s.split(',').next().map(|s2| s2.trim().to_string())))
-        .or_else(|| req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()).map(|s| s.to_string()))
-        .or_else(|| req.extensions().get::<std::net::SocketAddr>().map(|sa| sa.ip().to_string()));
+    // Gather possible sources and include the source label to aid diagnostics
+    // The tuple is (ip_value, source_label). Source labels match the header/extension
+    // names used by clients/tests so debugging information is more precise.
+    let ip_source: Option<(String, String)> = if let Some(c) = req.extensions().get::<crate::middlewares::proxy::ClientIp>() {
+        Some((c.0.to_string(), "extension".to_string()))
+    } else if let Some(v) = req.headers().get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+        Some((v.to_string(), "cf-connecting-ip".to_string()))
+    } else if let Some(v) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|s| s.split(',').next().map(|s2| s2.trim().to_string())) {
+        Some((v, "x-forwarded-for".to_string()))
+    } else if let Some(v) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
+        Some((v.to_string(), "x-real-ip".to_string()))
+    } else if let Some(sa) = req.extensions().get::<std::net::SocketAddr>() {
+        Some((sa.ip().to_string(), "peer".to_string()))
+    } else {
+        None
+    };
 
     let auth_token_opt = req.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|s| {
         let s = s.trim();
@@ -115,8 +125,8 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
         "auth" => {
             if let Some(tok) = &auth_token_opt {
                 (fingerprint(tok), "authorization".to_string(), "auth".to_string())
-            } else if let Some(ip) = ip_source.clone() {
-                (ip, "fallback-ip".to_string(), "ip".to_string())
+            } else if let Some((ip, src)) = ip_source.clone() {
+                (ip, format!("fallback-{}", src), "ip".to_string())
             } else {
                 ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
             }
@@ -124,17 +134,17 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
         "auth+ip" => {
             if let Some(tok) = &auth_token_opt {
                 let f = fingerprint(tok);
-                let ip_part = ip_source.clone().unwrap_or_else(|| "-".to_string());
+                let ip_part = ip_source.clone().map(|(ip, _src)| ip).unwrap_or_else(|| "-".to_string());
                 (format!("auth:{}:ip:{}", f, ip_part), "authorization+ip".to_string(), "auth+ip".to_string())
-            } else if let Some(ip) = ip_source.clone() {
-                (ip, "fallback-ip".to_string(), "ip".to_string())
+            } else if let Some((ip, src)) = ip_source.clone() {
+                (ip, format!("fallback-{}", src), "ip".to_string())
             } else {
                 ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
             }
         }
         _ => {
-            if let Some(ip) = ip_source.clone() {
-                (ip, "ip".to_string(), "ip".to_string())
+            if let Some((ip, src)) = ip_source.clone() {
+                (ip, src, "ip".to_string())
             } else if let Some(tok) = &auth_token_opt {
                 (fingerprint(tok), "authorization".to_string(), "auth".to_string())
             } else {

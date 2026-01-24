@@ -46,6 +46,6 @@ async fn rate_limiter_blocks_after_burst() {
     // 429 response should include x-key-source header (xff)
     assert_eq!(resp3.status().as_u16(), 429);
     let header_val = resp3.headers().get("x-key-source").unwrap().to_str().unwrap();
-    // key source is normalized to 'ip' for X-Forwarded-For and peer-derived IPs
-    assert_eq!(header_val, "ip");
+    // key source reflects the specific header used (here: x-forwarded-for)
+    assert_eq!(header_val, "x-forwarded-for");
 }

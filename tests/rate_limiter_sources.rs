@@ -80,3 +80,49 @@ async fn rate_limiter_uses_cf_connecting_ip_header_when_present() {
     let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
     assert_eq!(header_val, "cf-connecting-ip");
 }
+
+#[tokio::test]
+async fn rate_limiter_uses_x_forwarded_for_header_when_present() {
+    unsafe {
+        std::env::set_var("RATE_LIMIT_RPS", "1000");
+        std::env::set_var("RATE_LIMIT_BURST", "1000");
+    }
+
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(rate_limiter));
+
+    let req = Request::builder()
+        .uri("/")
+        .header("x-forwarded-for", "9.8.7.6, 1.2.3.4")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    assert_eq!(header_val, "x-forwarded-for");
+}
+
+#[tokio::test]
+async fn rate_limiter_uses_x_real_ip_header_when_present() {
+    unsafe {
+        std::env::set_var("RATE_LIMIT_RPS", "1000");
+        std::env::set_var("RATE_LIMIT_BURST", "1000");
+    }
+
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(middleware::from_fn(rate_limiter));
+
+    let req = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "7.7.7.7")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    assert_eq!(header_val, "x-real-ip");
+}
