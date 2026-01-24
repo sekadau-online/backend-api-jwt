@@ -5,12 +5,11 @@ use axum::{
 };
 
 use sqlx::MySqlPool;
-use bcrypt::verify;
 use validator::Validate;
 use serde_json::json;
 use crate::utils::handler::HandlerResult;
 //import schemas for login request and response
-use crate::schemas::login_schema::{LoginSchema, LoginResponseSchema, UserLoginResponseSchema};
+use crate::schemas::login_schema::{LoginSchema, LoginResponseSchema};
 //import util response API
 use crate::utils::response::ApiResponse; 
 //import util JWT generation
@@ -35,10 +34,20 @@ pub async fn login_handler(
     }
     // Normalize email for consistent lookup
     let email_normalized = payload.email.trim().to_lowercase();
-    // Fetch user by email
-    let user_record = sqlx::query_as::<_, UserLoginResponseSchema>(
+    // Fetch user by email (include password to avoid extra roundtrip)
+    #[derive(sqlx::FromRow, Debug)]
+    struct UserWithPassword {
+        id: i64,
+        name: String,
+        email: String,
+        created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+        password: String,
+    }
+
+    let user_record = sqlx::query_as::<_, UserWithPassword>(
         r#"
-        SELECT id, name, email, created_at, updated_at
+        SELECT id, name, email, created_at, updated_at, password
         FROM users
         WHERE email = ?
         "#
@@ -46,31 +55,36 @@ pub async fn login_handler(
     .bind(&email_normalized)
     .fetch_optional(&db_pool)
     .await;
-    let user = match user_record {
-        Ok(Some(user)) => user,
+
+    let (user, stored_password) = match user_record {
+        Ok(Some(u)) => {
+            let user_response = crate::schemas::login_schema::UserLoginResponseSchema {
+                id: u.id,
+                name: u.name.clone(),
+                email: u.email.clone(),
+                created_at: u.created_at,
+                updated_at: u.updated_at,
+            };
+            (user_response, u.password)
+        },
         _ => {
             let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
             return Err((StatusCode::UNAUTHORIZED, Json(response)));
         }
     };
-    // Verify password
-    let stored_password: String = match sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT password
-        FROM users
-        WHERE email = ?
-        "#
-    )
-    .bind(&email_normalized)
-    .fetch_one(&db_pool)
-    .await {
-        Ok(pw) => pw,
-        Err(_) => {
-            let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
-            return Err((StatusCode::UNAUTHORIZED, Json(response)));
+
+    // Verify password in a blocking thread to avoid blocking the async runtime
+    let pw = payload.password.clone();
+    let stored_pw = stored_password.clone();
+    let is_password_valid = match tokio::task::spawn_blocking(move || bcrypt::verify(&pw, &stored_pw)).await {
+        Ok(Ok(valid)) => valid,
+        Ok(Err(_)) => false,
+        Err(join_err) => {
+            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to verify password", "details": join_err.to_string() }));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
         }
     };
-    let is_password_valid = verify(&payload.password, &stored_password).unwrap_or_default();
+
     if !is_password_valid {
         let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
         return Err((StatusCode::UNAUTHORIZED, Json(response)));

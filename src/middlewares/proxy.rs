@@ -4,12 +4,34 @@ use std::str::FromStr;
 use ipnet::IpNet;
 use once_cell::sync::Lazy;
 use std::sync::RwLock;
+use tracing::debug;
 
 /// Extension type to store resolved client IP
 #[derive(Clone, Debug)]
 pub struct ClientIp(pub IpAddr);
 
 static TRUSTED_PROXES: Lazy<RwLock<Vec<IpNet>>> = Lazy::new(|| RwLock::new(parse_trusted_proxies()));
+
+/// Set trusted proxies at runtime (useful for tests or dynamic reconfiguration)
+/// Note: accepts a comma-separated list of CIDRs.
+pub fn set_trusted_proxies(raw: &str) {
+    let vec = raw.split(',')
+        .filter_map(|s| {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                IpNet::from_str(t).ok()
+            }
+        })
+        .collect::<Vec<IpNet>>();
+    if let Ok(mut guard) = TRUSTED_PROXES.write() {
+        *guard = vec;
+        debug!("proxy_middleware: set_trusted_proxies updated, count={}", guard.len());
+    } else {
+        tracing::warn!("proxy_middleware: failed to acquire write lock to set trusted proxies");
+    }
+}
 
 fn parse_trusted_proxies() -> Vec<IpNet> {
     let raw = std::env::var("TRUSTED_PROXIES").unwrap_or("".to_string());
@@ -70,7 +92,10 @@ pub async fn proxy_middleware(mut req: Request<axum::body::Body>, next: Next) ->
     let client_ip = maybe_ip.or_else(|| peer.map(|sa| sa.ip()));
 
     if let Some(ip) = client_ip {
+        debug!("proxy_middleware: resolved client_ip={}, trusted_peer={}", ip, trusted);
         req.extensions_mut().insert(ClientIp(ip));
+    } else {
+        debug!("proxy_middleware: no client ip resolved, trusted_peer={}", trusted);
     }
 
     next.run(req).await

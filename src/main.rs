@@ -38,11 +38,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .expect("APP_HOST:APP_PORT must form a valid socket address");
 
     // Print the server address
-    println!("Listening on http://{}", addr);
+    tracing::info!("Listening on http://{}", addr);
     
-    // Start the server
+    // Start the server and handle shutdown via ctrl-c
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-    axum::serve(listener, app.into_make_service()).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    let server = axum::serve(listener, app.into_make_service());
+
+    let shutdown_signal = async {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("Shutdown signal received");
+    };
+
+    tokio::select! {
+        res = server => {
+            res.map_err(|e| {
+                Box::<dyn std::error::Error + Send + Sync>::from(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to serve application: {}", e),
+                ))
+            })?;
+        }
+        _ = shutdown_signal => {
+            tracing::info!("Shutdown requested; exiting");
+        }
+    };
 
     Ok(())
-}   
+}
