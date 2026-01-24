@@ -6,6 +6,7 @@ use axum::{
 use axum::extract::Path;
 
 use sqlx::MySqlPool;
+use serde::Deserialize;
 use serde_json::{json, Value};
 use crate::utils::handler::HandlerResult;use bcrypt::hash;
 use validator::Validate;
@@ -20,25 +21,49 @@ use crate::schemas::user_schema::{UserResponseSchema, UserStoreRequestSchema, Us
 // Import util response API
 use crate::utils::response::ApiResponse;
 
+#[derive(Deserialize)]
+pub struct PaginationParams {
+    pub page: Option<u32>,
+    pub per_page: Option<u32>,
+}
+
 pub async fn index(
     Extension(db): Extension<MySqlPool>,
+    axum::extract::Query(params): axum::extract::Query<PaginationParams>,
 ) -> HandlerResult {
-    // Fetch all users from the database
+    // Bound and default pagination values
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(50).clamp(1, 100);
+    let offset = (page - 1) as i64 * per_page as i64;
+
+    // Fetch paginated users
     let users_result = sqlx::query_as::<_, User>(
         r#"
         SELECT id, name, email, created_at, updated_at
         FROM users
+        ORDER BY id
+        LIMIT ? OFFSET ?
         "#
     )
+    .bind(per_page as i64)
+    .bind(offset)
     .fetch_all(&db)
     .await;
 
-    match users_result {
-        Ok(users) => {
-            let response = ApiResponse::success_with_data("Users fetched successfully", json!({ "users": users }));
+    // Fetch total count for pagination metadata
+    let total_result: Result<i64, sqlx::Error> = sqlx::query_scalar("SELECT COUNT(1) FROM users")
+        .fetch_one(&db)
+        .await;
+
+    match (users_result, total_result) {
+        (Ok(users), Ok(total)) => {
+            let response = ApiResponse::success_with_data("Users fetched successfully", json!({
+                "users": users,
+                "meta": { "page": page, "per_page": per_page, "total": total }
+            }));
             Ok((StatusCode::OK, Json(response)))
         },
-        Err(e) => {
+        (Err(e), _) | (_, Err(e)) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to fetch users", "details": e.to_string() }));
             Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)))
         }
