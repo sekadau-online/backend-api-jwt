@@ -7,7 +7,7 @@ use axum::extract::Path;
 
 use sqlx::MySqlPool;
 use serde_json::{json, Value};
-use bcrypt::hash;
+use crate::utils::handler::HandlerResult;use bcrypt::hash;
 use validator::Validate;
 
 // Import Models User
@@ -22,7 +22,7 @@ use crate::utils::response::ApiResponse;
 
 pub async fn index(
     Extension(db): Extension<MySqlPool>,
-) -> (StatusCode, Json<ApiResponse<Value>>) {
+) -> HandlerResult {
     // Fetch all users from the database
     let users_result = sqlx::query_as::<_, User>(
         r#"
@@ -36,11 +36,11 @@ pub async fn index(
     match users_result {
         Ok(users) => {
             let response = ApiResponse::success_with_data("Users fetched successfully", json!({ "users": users }));
-            (StatusCode::OK, Json(response))
+            Ok((StatusCode::OK, Json(response)))
         },
         Err(e) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to fetch users", "details": e.to_string() }));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)))
         }
     }
 }
@@ -48,7 +48,7 @@ pub async fn index(
 pub async fn store(
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<UserStoreRequestSchema>,
-) -> (StatusCode, Json<ApiResponse<Value>>) {
+) -> Result<(StatusCode, Json<ApiResponse<Value>>), (StatusCode, Json<ApiResponse<Value>>)> {
     // Validate the incoming payload
     if let Err(errors) = payload.validate() {
         // Build a structured map: field -> [messages]
@@ -60,41 +60,35 @@ pub async fn store(
             errors_map.insert(field.to_string(), json!(msgs));
         }
         let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return (StatusCode::BAD_REQUEST, Json(response));
+        return Err((StatusCode::BAD_REQUEST, Json(response)));
     }
 
     // Normalize email
     let email_normalized = payload.email.trim().to_lowercase();
 
     // Check if the email already exists
-    let existing_count: i64 = match sqlx::query_scalar("SELECT COUNT(1) FROM users WHERE email = ?")
+    let existing_count: i64 = sqlx::query_scalar("SELECT COUNT(1) FROM users WHERE email = ?")
         .bind(&email_normalized)
         .fetch_one(&db_pool)
         .await
-    {
-        Ok(cnt) => cnt,
-        Err(e) => {
+        .map_err(|e| {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to check existing user", "details": e.to_string() }));
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-        }
-    };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+        })?;
 
     if existing_count > 0 {
         let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
-        return (StatusCode::CONFLICT, Json(response));
+        return Err((StatusCode::CONFLICT, Json(response)));
     }
 
     // Hash the password
-    let hashed_password = match hash(&payload.password, bcrypt::DEFAULT_COST) {
-        Ok(hp) => hp,
-        Err(_) => {
-            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-        }
-    };
+    let hashed_password = hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|_| {
+        let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+    })?;
 
     // Insert the new user into the database
-    let result = sqlx::query(
+    let res = sqlx::query(
         r#"
         INSERT INTO users (name, email, password)
         VALUES (?, ?, ?)
@@ -104,38 +98,29 @@ pub async fn store(
     .bind(&email_normalized)
     .bind(&hashed_password)
     .execute(&db_pool)
-    .await;
-
-    let user_id = match result {
-        Ok(res) => res.last_insert_id() as i64,
-        Err(e) => {
-            match &e {
-                sqlx::Error::Database(db_err) => {
-                    if let Some(code) = db_err.code() {
-                        if code == "1062" {
-                            let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
-                            return (StatusCode::CONFLICT, Json(response));
-                        }
-                    }
-                    let msg = db_err.message().to_string();
-                    if msg.to_lowercase().contains("duplicate") {
-                        let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
-                        return (StatusCode::CONFLICT, Json(response));
-                    }
-                }
-                _ => {}
-            }
-
-            let e_str = e.to_string();
-            if e_str.contains("1062") || e_str.to_lowercase().contains("duplicate") {
+    .await
+    .map_err(|e| {
+        if let sqlx::Error::Database(db_err) = &e {
+            if let Some(code) = db_err.code() && code == "1062" {
                 let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
                 return (StatusCode::CONFLICT, Json(response));
             }
-
-            let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to register user", "details": e.to_string() }));
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            let msg = db_err.message().to_string();
+            if msg.to_lowercase().contains("duplicate") {
+                let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+                return (StatusCode::CONFLICT, Json(response));
+            }
         }
-    };
+        let e_str = e.to_string();
+        if e_str.contains("1062") || e_str.to_lowercase().contains("duplicate") {
+            let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+            return (StatusCode::CONFLICT, Json(response));
+        }
+        let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to register user", "details": e.to_string() }));
+        (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+    })?;
+
+    let user_id = res.last_insert_id() as i64;
 
     // Fetch the newly created user
     let user = match sqlx::query_as::<_, UserResponseSchema>(
@@ -151,18 +136,25 @@ pub async fn store(
         Ok(user) => user,
         Err(e) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to fetch registered user", "details": e.to_string() }));
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
         }
     };
 
-    let response = ApiResponse::success_with_data("User created", serde_json::to_value(user).unwrap());
-    (StatusCode::CREATED, Json(response))
+    let user_value = match serde_json::to_value(user) {
+        Ok(v) => v,
+        Err(e) => {
+            let response = ApiResponse::error_with_data("Serialization error", json!({ "error": "Failed to serialize user", "details": e.to_string() }));
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+        }
+    };
+    let response = ApiResponse::success_with_data("User created", user_value);
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 pub async fn show(
     Extension(db_pool): Extension<MySqlPool>,
     axum::extract::Path(user_id): axum::extract::Path<i64>,
-) -> (StatusCode, Json<ApiResponse<Value>>) {
+) -> HandlerResult {
     // Fetch user by ID
     let user_result = sqlx::query_as::<_, UserResponseSchema>(
         r#"
@@ -177,16 +169,23 @@ pub async fn show(
 
     match user_result {
         Ok(Some(user)) => {
-            let response = ApiResponse::success_with_data("User fetched successfully", serde_json::to_value(user).unwrap());
-            (StatusCode::OK, Json(response))
+            let user_value = match serde_json::to_value(user) {
+                Ok(v) => v,
+                Err(e) => {
+                    let response = ApiResponse::error_with_data("Serialization error", json!({ "error": "Failed to serialize user", "details": e.to_string() }));
+                    return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+                }
+            };
+            let response = ApiResponse::success_with_data("User fetched successfully", user_value);
+            Ok((StatusCode::OK, Json(response)))
         },
         Ok(None) => {
             let response = ApiResponse::error_with_data("Not Found", json!({ "error": "User not found" }));
-            (StatusCode::NOT_FOUND, Json(response))
+            Err((StatusCode::NOT_FOUND, Json(response)))
         },
         Err(e) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to fetch user", "details": e.to_string() }));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)))
         }
     }
 } 
@@ -195,7 +194,7 @@ pub async fn update(
     Path(id): Path<i64>,
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<UserUpdateRequestSchema>,
-) -> (StatusCode, Json<ApiResponse<Value>>) {
+) -> HandlerResult {
     // Validate the incoming payload
     if let Err(errors) = payload.validate() {
         // Build a structured map: field -> [messages]
@@ -207,7 +206,7 @@ pub async fn update(
             errors_map.insert(field.to_string(), json!(msgs));
         }
         let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return (StatusCode::BAD_REQUEST, Json(response));
+        return Err((StatusCode::BAD_REQUEST, Json(response)));
     }
 
     // Prepare optional email (trim + lowercase if provided)
@@ -232,14 +231,14 @@ pub async fn update(
         Ok(res) => {
             if res.rows_affected() == 0 {
                 let response = ApiResponse::error_with_data("Not Found", json!({ "error": "User not found" }));
-                return (StatusCode::NOT_FOUND, Json(response));
+                return Err((StatusCode::NOT_FOUND, Json(response)));
             }
             let response = ApiResponse::success_with_data("User updated successfully", json!({ "user_id": id }));
-            (StatusCode::OK, Json(response))
+            Ok((StatusCode::OK, Json(response)))
         },
         Err(e) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to update user", "details": e.to_string() }));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)))
         }
     }
 }
@@ -247,7 +246,7 @@ pub async fn update(
 pub async fn destroy(
     Path(id): Path<i64>,
     Extension(db_pool): Extension<MySqlPool>,
-) -> (StatusCode, Json<ApiResponse<Value>>) {
+) -> HandlerResult {
     // Delete user from the database
     let result = sqlx::query(
         r#"
@@ -263,14 +262,14 @@ pub async fn destroy(
         Ok(res) => {
             if res.rows_affected() == 0 {
                 let response = ApiResponse::error_with_data("Not Found", json!({ "error": "User not found" }));
-                return (StatusCode::NOT_FOUND, Json(response));
+                return Err((StatusCode::NOT_FOUND, Json(response)));
             }
             let response = ApiResponse::success_with_data("User deleted successfully", json!({ "user_id": id }));
-            (StatusCode::OK, Json(response))
+            Ok((StatusCode::OK, Json(response)))
         },
         Err(e) => {
             let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to delete user", "details": e.to_string() }));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
+            Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)))
         }
     }
 }

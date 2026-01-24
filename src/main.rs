@@ -5,21 +5,20 @@ use backend_api_jwt::config;
 use backend_api_jwt::create_app;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Load environment variables from .env file (if present)
     dotenv().ok();
 
     // Friendly check for required env before we attempt to connect
     if std::env::var("DATABASE_URL").is_err() {
-        eprintln!("Error: DATABASE_URL is not set. Copy `.env.test` to `.env` and update credentials, or set DATABASE_URL in your environment. See README.md for details.");
-        std::process::exit(1);
+        return Err(Box::<dyn std::error::Error + Send + Sync>::from("Error: DATABASE_URL is not set. Copy `.env.test` to `.env` and update credentials, or set DATABASE_URL in your environment. See README.md for details."));
     }
 
     // Initialize tracing for structured logs
     tracing_subscriber::fmt::init();
 
     // Establish database connection (and run migrations)
-    let db_pool = config::database::establish_connection().await;
+    let db_pool = config::database::establish_connection().await?;
 
     // Create the application router using library helper (CORS will be configured there based on env)
     let app = create_app(db_pool.clone());
@@ -42,6 +41,8 @@ async fn main() {
     println!("Listening on http://{}", addr);
     
     // Start the server
-    let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind to address");
-    axum::serve(listener, app.into_make_service()).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    axum::serve(listener, app.into_make_service()).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    Ok(())
 }   
