@@ -40,28 +40,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Print the server address
     tracing::info!("Listening on http://{}", addr);
     
-    // Start the server and handle shutdown via ctrl-c
+    // Start the server and handle shutdown via ctrl-c / SIGTERM
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-    let server = axum::serve(listener, app.into_make_service());
 
-    let shutdown_signal = async {
-        tokio::signal::ctrl_c().await.ok();
-        tracing::info!("Shutdown signal received");
+    let shutdown_signal = {
+        #[cfg(unix)]
+        {
+            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to create SIGTERM handler");
+            async move {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {
+                        tracing::info!("Received Ctrl+C");
+                    },
+                    _ = sigterm.recv() => {
+                        tracing::info!("Received SIGTERM");
+                    },
+                }
+                tracing::info!("Shutdown signal received");
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            async {
+                tokio::signal::ctrl_c().await.ok();
+                tracing::info!("Shutdown signal received");
+            }
+        }
     };
 
-    tokio::select! {
-        res = server => {
-            res.map_err(|e| {
-                Box::<dyn std::error::Error + Send + Sync>::from(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to serve application: {}", e),
-                ))
-            })?;
-        }
-        _ = shutdown_signal => {
-            tracing::info!("Shutdown requested; exiting");
-        }
-    };
+    let server = axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal);
+
+    server.await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     Ok(())
 }
