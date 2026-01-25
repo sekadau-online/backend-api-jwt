@@ -1,6 +1,6 @@
 use axum::middleware;
 use axum::{Router, body::Body, http::Request, routing::get};
-use backend_api_jwt::middlewares::rate_limiter::{debug_info, rate_limiter};
+use backend_api_jwt::middlewares::rate_limiter::{debug_info, debug_action, rate_limiter};
 use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
@@ -37,13 +37,13 @@ async fn debug_endpoint_reports_buckets() {
         std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken");
     }
 
-    let dbg = Router::new().route("/debug/rate_limiter", get(debug_info));
+    let dbg = Router::new().route("/debug/rate_limiter", get(debug_info).post(debug_action));
     let req_dbg = Request::builder()
         .uri("/debug/rate_limiter")
         .header("authorization", "Bearer testtoken")
         .body(Body::empty())
         .unwrap();
-    let resp = dbg.oneshot(req_dbg).await.unwrap();
+    let resp = dbg.clone().oneshot(req_dbg).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
 
     let body_bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
@@ -51,4 +51,23 @@ async fn debug_endpoint_reports_buckets() {
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(v["buckets"].as_u64().unwrap() >= 2);
+
+    // Now exercise the POST drop action by dropping the bottom key
+    let bottom_key = v["bottom"][0]["key"].as_str().expect("bottom key");
+    let payload = serde_json::json!({ "action": "drop", "bottom": [{ "key": bottom_key }] });
+
+    let req_drop = Request::builder()
+        .method("POST")
+        .uri("/debug/rate_limiter")
+        .header("authorization", "Bearer testtoken")
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .unwrap();
+    let resp2 = dbg.oneshot(req_drop).await.unwrap();
+    assert_eq!(resp2.status().as_u16(), 200);
+    let body2 = axum::body::to_bytes(resp2.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let v2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
+    assert!(v2["removed"].as_u64().unwrap() >= 1);
 }

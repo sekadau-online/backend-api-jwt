@@ -361,43 +361,45 @@ pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl Into
         );
     }
 
-    // Optional token guard for safety in public environments
-    if let Ok(token) = std::env::var("RATE_LIMIT_DEBUG_TOKEN") {
-        // require Authorization: Bearer <token>
-        match req
-            .headers()
-            .get("authorization")
-            .and_then(|v| v.to_str().ok())
-        {
-            Some(h) if h.trim().to_lowercase().starts_with("bearer ") && h[7..].trim() == token => {
-                // ok
+    // Helper to authorize debug requests. Returns Err(response) on failure.
+    fn authorize_debug(req: &axum::http::Request<axum::body::Body>) -> Result<(), (StatusCode, AxumJson<serde_json::Value>)> {
+        if let Ok(token) = std::env::var("RATE_LIMIT_DEBUG_TOKEN") {
+            // require Authorization: Bearer <token>
+            match req.headers().get("authorization").and_then(|v| v.to_str().ok()) {
+                Some(h) if h.trim().to_lowercase().starts_with("bearer ") && h[7..].trim() == token => Ok(()),
+                _ => {
+                    let response = ApiResponse::error_with_data(
+                        "Unauthorized",
+                        json!({ "error": "Missing or invalid Authorization header" }),
+                    );
+                    Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))))
+                }
             }
-            _ => {
-                let response = ApiResponse::error_with_data(
-                    "Unauthorized",
-                    json!({ "error": "Missing or invalid Authorization header" }),
-                );
-                return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
-            }
-        }
-    } else {
-        // If no debug token is set, allow only local requests (loopback) to protect exposed instances
-        if let Some(sa) = req.extensions().get::<std::net::SocketAddr>() {
-            if !sa.ip().is_loopback() {
+        } else {
+            // If no debug token is set, allow only local requests (loopback) to protect exposed instances
+            if let Some(sa) = req.extensions().get::<std::net::SocketAddr>() {
+                if !sa.ip().is_loopback() {
+                    let response = ApiResponse::error_with_data(
+                        "Unauthorized",
+                        json!({ "error": "Missing Authorization header" }),
+                    );
+                    return Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))));
+                }
+                Ok(())
+            } else {
+                // No peer info available; deny to be safe
                 let response = ApiResponse::error_with_data(
                     "Unauthorized",
                     json!({ "error": "Missing Authorization header" }),
                 );
-                return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
+                Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))))
             }
-        } else {
-            // No peer info available; deny to be safe
-            let response = ApiResponse::error_with_data(
-                "Unauthorized",
-                json!({ "error": "Missing Authorization header" }),
-            );
-            return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
         }
+    }
+
+    // authorize current request for debug actions
+    if let Err(e) = authorize_debug(&req) {
+        return e;
     }
 
     // Sample up to N buckets to avoid expensive work
@@ -450,6 +452,116 @@ pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl Into
         "top": top,
         "bottom": bottom,
     });
+    (StatusCode::OK, AxumJson(resp))
+}
+
+/// Accept admin/debug actions for the rate limiter (e.g., drop specific buckets).
+/// Visible only when `RATE_LIMIT_DEBUG=true` and authorized similar to GET /debug/rate_limiter.
+pub async fn debug_action(
+    req: axum::http::Request<axum::body::Body>,
+) -> impl IntoResponse {
+    // Capture headers and peer info before consuming body
+    let headers = req.headers().clone();
+    let peer_addr = req.extensions().get::<std::net::SocketAddr>().cloned();
+
+    // Read body bytes and parse JSON; to_bytes requires a limit param
+    let whole_body = match axum::body::to_bytes(req.into_body(), 64 * 1024).await {
+        Ok(b) => b,
+        Err(_) => {
+            let response = ApiResponse::error_with_data("Bad Request", json!({ "error": "Failed to read request body" }));
+            return (StatusCode::BAD_REQUEST, AxumJson(json!(response)));
+        }
+    };
+
+    let payload: serde_json::Value = match serde_json::from_slice(&whole_body) {
+        Ok(v) => v,
+        Err(_) => {
+            let response = ApiResponse::error_with_data("Bad Request", json!({ "error": "Invalid JSON body" }));
+            return (StatusCode::BAD_REQUEST, AxumJson(json!(response)));
+        }
+    };
+
+    // Reuse authorization helper (same logic as GET) but accept headers + peer info
+    fn authorize_debug_from(headers: &axum::http::HeaderMap, peer: Option<std::net::SocketAddr>) -> Result<(), (StatusCode, AxumJson<serde_json::Value>)> {
+        if let Ok(token) = std::env::var("RATE_LIMIT_DEBUG_TOKEN") {
+            match headers.get("authorization").and_then(|v| v.to_str().ok()) {
+                Some(h) if h.trim().to_lowercase().starts_with("bearer ") && h[7..].trim() == token => Ok(()),
+                _ => {
+                    let response = ApiResponse::error_with_data(
+                        "Unauthorized",
+                        json!({ "error": "Missing or invalid Authorization header" }),
+                    );
+                    Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))))
+                }
+            }
+        } else {
+            if let Some(sa) = peer {
+                if !sa.ip().is_loopback() {
+                    let response = ApiResponse::error_with_data(
+                        "Unauthorized",
+                        json!({ "error": "Missing Authorization header" }),
+                    );
+                    return Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))));
+                }
+                Ok(())
+            } else {
+                let response = ApiResponse::error_with_data(
+                    "Unauthorized",
+                    json!({ "error": "Missing Authorization header" }),
+                );
+                Err((StatusCode::UNAUTHORIZED, AxumJson(json!(response))))
+            }
+        }
+    }
+
+    if authorize_debug_from(&headers, peer_addr).is_err() {
+        let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Missing or invalid Authorization header" }));
+        return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
+    }
+
+    // Determine desired action (we currently support 'drop')
+    let action = payload
+        .get("action")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    if action != "drop" {
+        let response = ApiResponse::error_with_data("Not Implemented", json!({ "error": "Only 'drop' action is supported" }));
+        return (StatusCode::NOT_IMPLEMENTED, AxumJson(json!(response)));
+    }
+
+    // Collect keys from payload: support 'keys' array of strings, or 'bottom'/'top' arrays of objects with 'key' field.
+    let mut keys_to_drop: Vec<String> = Vec::new();
+    if let Some(keys) = payload.get("keys").and_then(|v| v.as_array()) {
+        for k in keys.iter().filter_map(|v| v.as_str()) {
+            keys_to_drop.push(k.to_string());
+        }
+    }
+    for loc in ["bottom", "top"] {
+        if let Some(arr) = payload.get(loc).and_then(|v| v.as_array()) {
+            for obj in arr.iter().filter_map(|v| v.as_object()) {
+                if let Some(k) = obj.get("key").and_then(|kv| kv.as_str()) {
+                    keys_to_drop.push(k.to_string());
+                }
+            }
+        }
+    }
+
+    if keys_to_drop.is_empty() {
+        let response = ApiResponse::error_with_data("Bad Request", json!({ "error": "No keys provided to drop" }));
+        return (StatusCode::BAD_REQUEST, AxumJson(json!(response)));
+    }
+
+    // Perform removals
+    let mut removed = 0usize;
+    for k in keys_to_drop.iter() {
+        if BUCKETS.remove(k).is_some() {
+            removed += 1;
+            tracing::info!("rate_limiter: admin dropped bucket key={}", k);
+        }
+    }
+
+    let resp = json!({ "removed": removed, "buckets": BUCKETS.len() });
     (StatusCode::OK, AxumJson(resp))
 }
 

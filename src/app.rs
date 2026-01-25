@@ -81,10 +81,16 @@ pub fn build_router() -> Router {
         .map(|v| v == "true")
         .unwrap_or(false)
     {
-        app = app.route(
-            "/debug/rate_limiter",
-            get(crate::middlewares::rate_limiter::debug_info),
-        );
+        use axum::routing::post;
+        app = app
+            .route(
+                "/debug/rate_limiter",
+                get(crate::middlewares::rate_limiter::debug_info),
+            )
+            .route(
+                "/debug/rate_limiter",
+                post(crate::middlewares::rate_limiter::debug_action),
+            );
     }
 
     // Healthcheck endpoint (DB-aware)
