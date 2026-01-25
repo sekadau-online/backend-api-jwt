@@ -33,8 +33,8 @@ pub async fn register_handler(
 
     // Normalize email for consistent duplicate checks and storage
     let email_normalized = payload.email.trim().to_lowercase();
-    // Check if the email already exists to avoid duplicate registrations
-    let existing_count: i64 = sqlx::query_scalar("SELECT COUNT(1) FROM users WHERE email = ?")
+    // Efficient existence check using EXISTS (returns 1 if found)
+    let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE email = ?)")
         .bind(&email_normalized)
         .fetch_one(&db_pool)
         .await
@@ -43,7 +43,7 @@ pub async fn register_handler(
             (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
         })?;
 
-    if existing_count > 0 {
+    if exists == 1 {
         let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
         return Err((StatusCode::CONFLICT, Json(response)));
     }

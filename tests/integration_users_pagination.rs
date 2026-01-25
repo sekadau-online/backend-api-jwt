@@ -52,14 +52,15 @@ async fn users_pagination_flow() {
     pool.execute("DELETE FROM users").await.ok();
 
     // insert a bunch of users (e.g., 120)
+    // Pre-hash password once to avoid heavy CPU per-iteration (speeds up tests)
+    let pw = bcrypt::hash("password", bcrypt::DEFAULT_COST).expect("hash pw");
     for i in 0..120 {
         let email = format!("user{}@example.com", i);
         let name = format!("User {}", i);
-        let pw = bcrypt::hash("password", bcrypt::DEFAULT_COST).expect("hash pw");
         sqlx::query("INSERT INTO users (name, email, password) VALUES (?, ?, ?)")
             .bind(name)
             .bind(email)
-            .bind(pw)
+            .bind(&pw)
             .execute(&pool)
             .await
             .expect("insert user");

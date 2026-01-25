@@ -91,44 +91,26 @@ pub async fn store(
     // Normalize email
     let email_normalized = payload.email.trim().to_lowercase();
 
-    // Check if the email already exists
-    let existing_count: i64 = sqlx::query_scalar("SELECT COUNT(1) FROM users WHERE email = ?")
-        .bind(&email_normalized)
-        .fetch_one(&db_pool)
-        .await
-        .map_err(|e| {
-            let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to check existing user", "details": e.to_string() }));
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
-        })?;
+    // Configurable bcrypt cost (useful to lower cost in tests via BCRYPT_COST env var)
+    let bcrypt_cost: u32 = std::env::var("BCRYPT_COST")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(bcrypt::DEFAULT_COST);
 
-    if existing_count > 0 {
-        let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
-        return Err((StatusCode::CONFLICT, Json(response)));
-    }
-
-    // Hash the password
-    let hashed_password = hash(&payload.password, bcrypt::DEFAULT_COST).map_err(|_| {
+    // Hash the password (cost configurable)
+    let hashed_password = hash(&payload.password, bcrypt_cost).map_err(|_| {
         let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
     })?;
 
-    // Insert the new user into the database
-    let res = sqlx::query(
-        r#"
-        INSERT INTO users (name, email, password)
-        VALUES (?, ?, ?)
-        "#,
-    )
-    .bind(&payload.name)
-    .bind(&email_normalized)
-    .bind(&hashed_password)
-    .execute(&db_pool)
-    .await
-    .map_err(|e| {
+    // Helper to map DB errors consistently (handles unique constraint -> 409)
+    let map_db_err = |e: sqlx::Error| -> (StatusCode, Json<ApiResponse<Value>>) {
         if let sqlx::Error::Database(db_err) = &e {
-            if let Some(code) = db_err.code() && code == "1062" {
-                let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
-                return (StatusCode::CONFLICT, Json(response));
+            if let Some(code) = db_err.code() {
+                if code == "1062" {
+                    let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+                    return (StatusCode::CONFLICT, Json(response));
+                }
             }
             let msg = db_err.message().to_string();
             if msg.to_lowercase().contains("duplicate") {
@@ -143,7 +125,21 @@ pub async fn store(
         }
         let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to register user", "details": e.to_string() }));
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
-    })?;
+    };
+
+    // Insert the new user into the database
+    let res = sqlx::query(
+        r#"
+        INSERT INTO users (name, email, password)
+        VALUES (?, ?, ?)
+        "#,
+    )
+    .bind(&payload.name)
+    .bind(&email_normalized)
+    .bind(&hashed_password)
+    .execute(&db_pool)
+    .await
+    .map_err(|e| map_db_err(e))?;
 
     let user_id = res.last_insert_id() as i64;
 

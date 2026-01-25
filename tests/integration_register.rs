@@ -43,12 +43,12 @@ async fn register_flow() {
     let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
     sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
     // ensure users table exists; if migration didn't create it, apply SQL directly (defensive)
-    let exists: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users'")
+    let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users')")
         .bind(test_db)
         .fetch_one(&pool)
         .await
         .expect("info query");
-    if exists.0 == 0 {
+    if exists == 0 {
         // read migration SQL file and execute
         let sql = std::fs::read_to_string("migrations/20260122100826_create_users_table.sql").expect("read migration");
         pool.execute(sql.as_str()).await.expect("apply raw migration");
