@@ -318,6 +318,30 @@ curl -I -H "cf-connecting-ip: 203.0.113.55" http://127.0.0.1:${APP_PORT:-8000}/u
 curl -H "Authorization: Bearer $RATE_LIMIT_DEBUG_TOKEN" http://127.0.0.1:${APP_PORT:-8000}/debug/rate_limiter | jq .
 ```
 
+- Admin actions on the rate limiter (requires `RATE_LIMIT_DEBUG=true` and authorization):
+
+  - Drop one or more buckets by key, or drop keys included in the `top`/`bottom` lists returned by the GET handler. Example (drop a single bottom key):
+
+  ```bash
+  curl -X POST -H "Authorization: Bearer $RATE_LIMIT_DEBUG_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{ "action": "drop", "bottom": [{ "key": "<bucket_key_here>" }] }' \
+       http://127.0.0.1:${APP_PORT:-8000}/debug/rate_limiter | jq .
+  ```
+
+  - You can also send a list of explicit keys to drop:
+
+  ```bash
+  curl -X POST -H "Authorization: Bearer $RATE_LIMIT_DEBUG_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{ "action": "drop", "keys": ["key1","key2"] }' \
+       http://127.0.0.1:${APP_PORT:-8000}/debug/rate_limiter | jq .
+  ```
+
+  - The POST returns a JSON object with the number of removed buckets and the current bucket count, for example: `{ "removed": 1, "buckets": 5 }`.
+
+  Note: if `RATE_LIMIT_DEBUG_TOKEN` is not set, the debug endpoints are only accessible from loopback (127.0.0.1) to avoid exposing admin controls.
+
 Notes:
 - Include IPv6 ranges from Cloudflare if you accept IPv6 traffic (e.g. `2400:cb00::/32`, `2606:4700::/32`, ...).
 - Update these ranges periodically — Cloudflare may add/change ranges.
