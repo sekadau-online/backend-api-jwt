@@ -1,10 +1,4 @@
-use axum::{
-    extract::Request,
-    middleware::Next,
-    response::Response,
-    http::StatusCode,
-    Json,
-};
+use axum::{Json, extract::Request, http::StatusCode, middleware::Next, response::Response};
 
 use crate::utils::jwt::verify_jwt_token;
 use crate::utils::response::ApiResponse;
@@ -13,23 +7,26 @@ use crate::utils::response::ApiResponse;
 type AuthErrorResponse = (StatusCode, Json<ApiResponse<serde_json::Value>>);
 
 // Authentication middleware to protect routes
-pub async fn auth_middleware(
-    mut req: Request,
-    next: Next,
-) -> Result<Response, AuthErrorResponse> {
+pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, AuthErrorResponse> {
     // Extract the Authorization header from the request
     let header = req.headers();
     let auth_header = match header.get("Authorization") {
         Some(h) => h.to_str().unwrap_or(""),
         None => {
-            let response = ApiResponse::error_with_data("Unauthorized", serde_json::json!({ "error": "Missing Authorization header" }));
+            let response = ApiResponse::error_with_data(
+                "Unauthorized",
+                serde_json::json!({ "error": "Missing Authorization header" }),
+            );
             return Err((StatusCode::UNAUTHORIZED, Json(response)));
         }
     };
 
     // Check if the header starts with "Bearer "
     if !auth_header.starts_with("Bearer ") {
-        let response = ApiResponse::error_with_data("Unauthorized", serde_json::json!({ "error": "Invalid Authorization header format" }));
+        let response = ApiResponse::error_with_data(
+            "Unauthorized",
+            serde_json::json!({ "error": "Invalid Authorization header format" }),
+        );
         return Err((StatusCode::UNAUTHORIZED, Json(response)));
     }
 
@@ -45,7 +42,10 @@ pub async fn auth_middleware(
             Ok(next.run(req).await)
         }
         Err(e) => {
-            let response = ApiResponse::error_with_data("Unauthorized", serde_json::json!({ "error": "Invalid or expired token", "details": e.to_string() }));
+            let response = ApiResponse::error_with_data(
+                "Unauthorized",
+                serde_json::json!({ "error": "Invalid or expired token", "details": e.to_string() }),
+            );
             Err((StatusCode::UNAUTHORIZED, Json(response)))
         }
     }

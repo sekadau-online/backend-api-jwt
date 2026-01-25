@@ -1,8 +1,8 @@
 use axum::{http::Request, middleware::Next, response::Response};
-use std::net::IpAddr;
-use std::str::FromStr;
 use ipnet::IpNet;
 use once_cell::sync::Lazy;
+use std::net::IpAddr;
+use std::str::FromStr;
 use std::sync::RwLock;
 use tracing::debug;
 
@@ -10,12 +10,14 @@ use tracing::debug;
 #[derive(Clone, Debug)]
 pub struct ClientIp(pub IpAddr);
 
-static TRUSTED_PROXES: Lazy<RwLock<Vec<IpNet>>> = Lazy::new(|| RwLock::new(parse_trusted_proxies()));
+static TRUSTED_PROXES: Lazy<RwLock<Vec<IpNet>>> =
+    Lazy::new(|| RwLock::new(parse_trusted_proxies()));
 
 /// Set trusted proxies at runtime (useful for tests or dynamic reconfiguration)
 /// Note: accepts a comma-separated list of CIDRs.
 pub fn set_trusted_proxies(raw: &str) {
-    let vec = raw.split(',')
+    let vec = raw
+        .split(',')
         .filter_map(|s| {
             let t = s.trim();
             if t.is_empty() {
@@ -27,7 +29,10 @@ pub fn set_trusted_proxies(raw: &str) {
         .collect::<Vec<IpNet>>();
     if let Ok(mut guard) = TRUSTED_PROXES.write() {
         *guard = vec;
-        debug!("proxy_middleware: set_trusted_proxies updated, count={}", guard.len());
+        debug!(
+            "proxy_middleware: set_trusted_proxies updated, count={}",
+            guard.len()
+        );
     } else {
         tracing::warn!("proxy_middleware: failed to acquire write lock to set trusted proxies");
     }
@@ -73,10 +78,20 @@ pub async fn proxy_middleware(mut req: Request<axum::body::Body>, next: Next) ->
 
     // Prefer Cloudflare header, then X-Forwarded-For, then X-Real-IP
     let maybe_ip = if trusted {
-        if let Some(cf) = req.headers().get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+        if let Some(cf) = req
+            .headers()
+            .get("cf-connecting-ip")
+            .and_then(|v| v.to_str().ok())
+        {
             IpAddr::from_str(cf).ok()
-        } else if let Some(xff) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-            xff.split(',').next().and_then(|s| IpAddr::from_str(s.trim()).ok())
+        } else if let Some(xff) = req
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+        {
+            xff.split(',')
+                .next()
+                .and_then(|s| IpAddr::from_str(s.trim()).ok())
         } else if let Some(xri) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
             IpAddr::from_str(xri).ok()
         } else {
@@ -89,10 +104,16 @@ pub async fn proxy_middleware(mut req: Request<axum::body::Body>, next: Next) ->
     let client_ip = maybe_ip.or_else(|| peer.map(|sa| sa.ip()));
 
     if let Some(ip) = client_ip {
-        debug!("proxy_middleware: resolved client_ip={}, trusted_peer={}", ip, trusted);
+        debug!(
+            "proxy_middleware: resolved client_ip={}, trusted_peer={}",
+            ip, trusted
+        );
         req.extensions_mut().insert(ClientIp(ip));
     } else {
-        debug!("proxy_middleware: no client ip resolved, trusted_peer={}", trusted);
+        debug!(
+            "proxy_middleware: no client ip resolved, trusted_peer={}",
+            trusted
+        );
     }
 
     next.run(req).await

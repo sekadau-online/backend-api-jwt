@@ -1,8 +1,10 @@
-use backend_api_jwt::middlewares::rate_limiter::{rate_limiter, purge_stale_buckets_once, debug_info};
-use axum::{Router, routing::get, http::Request, body::Body};
 use axum::middleware;
-use tower::util::ServiceExt;
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::rate_limiter::{
+    debug_info, purge_stale_buckets_once, rate_limiter,
+};
 use serial_test::serial;
+use tower::util::ServiceExt;
 
 // helper imports removed; this test uses only public API of the crate
 
@@ -21,7 +23,11 @@ async fn purge_removes_stale_buckets() {
         .layer(middleware::from_fn(rate_limiter));
 
     // create bucket for 1.2.3.4
-    let req = Request::builder().uri("/").header("x-forwarded-for", "1.2.3.4").body(Body::empty()).unwrap();
+    let req = Request::builder()
+        .uri("/")
+        .header("x-forwarded-for", "1.2.3.4")
+        .body(Body::empty())
+        .unwrap();
     let _ = app.clone().oneshot(req).await.unwrap();
     println!("TEST: created bucket for 1.2.3.4");
 
@@ -33,11 +39,19 @@ async fn purge_removes_stale_buckets() {
     println!("TEST: returned from purge_stale_buckets_once");
 
     // call debug endpoint with token (test-mode)
-    unsafe { std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken"); }
+    unsafe {
+        std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken");
+    }
     let dbg = Router::new().route("/debug/rate_limiter", get(debug_info));
-    let req_dbg = Request::builder().uri("/debug/rate_limiter").header("authorization", "Bearer testtoken").body(Body::empty()).unwrap();
+    let req_dbg = Request::builder()
+        .uri("/debug/rate_limiter")
+        .header("authorization", "Bearer testtoken")
+        .body(Body::empty())
+        .unwrap();
     let resp = dbg.oneshot(req_dbg).await.unwrap();
-    let body_bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert_eq!(v["buckets"].as_u64().unwrap(), 0);
 }

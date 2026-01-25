@@ -1,16 +1,12 @@
-use axum::{
-    Extension,
-    Json,
-    http::StatusCode,
-};
+use axum::{Extension, Json, http::StatusCode};
 
-use sqlx::MySqlPool;
-use serde_json::json;
 use crate::utils::handler::HandlerResult;
+use serde_json::json;
+use sqlx::MySqlPool;
 //import schemas for login request and response
-use crate::schemas::login_schema::{LoginSchema, LoginResponseSchema};
+use crate::schemas::login_schema::{LoginResponseSchema, LoginSchema};
 //import util response API
-use crate::utils::response::ApiResponse; 
+use crate::utils::response::ApiResponse;
 //import util JWT generation
 use crate::utils::jwt::generate_jwt_token;
 // Handler for user login
@@ -38,7 +34,7 @@ pub async fn login_handler(
         SELECT id, name, email, created_at, updated_at, password
         FROM users
         WHERE email = ?
-        "#
+        "#,
     )
     .bind(&email_normalized)
     .fetch_optional(&db_pool)
@@ -54,15 +50,20 @@ pub async fn login_handler(
                 updated_at: u.updated_at,
             };
             (user_response, u.password)
-        },
+        }
         _ => {
-            let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
+            let response = ApiResponse::error_with_data(
+                "Unauthorized",
+                json!({ "error": "Invalid email or password" }),
+            );
             return Err((StatusCode::UNAUTHORIZED, Json(response)));
         }
     };
 
     // Verify password using shared helper (runs bcrypt.verify in blocking thread with timeout)
-    let timeout_secs: Option<u64> = std::env::var("BCRYPT_VERIFY_TIMEOUT_SECONDS").ok().and_then(|v| v.parse().ok());
+    let timeout_secs: Option<u64> = std::env::var("BCRYPT_VERIFY_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse().ok());
     let pw = payload.password.clone();
     let stored_pw = stored_password.clone();
 
@@ -71,26 +72,35 @@ pub async fn login_handler(
             // ok
         }
         Ok(false) => {
-            tracing::warn!("login failed: invalid credentials for email={}", email_normalized);
-            let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
+            tracing::warn!(
+                "login failed: invalid credentials for email={}",
+                email_normalized
+            );
+            let response = ApiResponse::error_with_data(
+                "Unauthorized",
+                json!({ "error": "Invalid email or password" }),
+            );
             return Err((StatusCode::UNAUTHORIZED, Json(response)));
         }
         Err(e) => {
             tracing::error!("hash verify error: {}", e);
-            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to verify password" }));
+            let response = ApiResponse::error_with_data(
+                "Hash error",
+                json!({ "error": "Failed to verify password" }),
+            );
             return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
         }
     }
     // Generate JWT token
     let token = generate_jwt_token(user.id).await.map_err(|e| {
-        let response = ApiResponse::error_with_data("Token error", json!({ "error": "Failed to generate token", "details": e.to_string() }));
+        let response = ApiResponse::error_with_data(
+            "Token error",
+            json!({ "error": "Failed to generate token", "details": e.to_string() }),
+        );
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
     })?;
     // Build response schema
-    let login_response = LoginResponseSchema {
-        user,
-        token,
-    };
+    let login_response = LoginResponseSchema { user, token };
     let response = ApiResponse::success_with_data("Login successful", json!(login_response));
     Ok((StatusCode::OK, Json(response)))
 }

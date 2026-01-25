@@ -1,6 +1,6 @@
-use axum::{Router, routing::get, http::Request, body::Body};
-use backend_api_jwt::middlewares::rate_limiter::{rate_limiter, debug_info};
 use axum::middleware;
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::rate_limiter::{debug_info, rate_limiter};
 use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
@@ -33,14 +33,22 @@ async fn debug_endpoint_reports_buckets() {
     app.clone().oneshot(req2).await.unwrap();
 
     // Call debug handler directly via a router route with Authorization header (token set in env)
-    unsafe { std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken"); }
+    unsafe {
+        std::env::set_var("RATE_LIMIT_DEBUG_TOKEN", "testtoken");
+    }
 
     let dbg = Router::new().route("/debug/rate_limiter", get(debug_info));
-    let req_dbg = Request::builder().uri("/debug/rate_limiter").header("authorization", "Bearer testtoken").body(Body::empty()).unwrap();
+    let req_dbg = Request::builder()
+        .uri("/debug/rate_limiter")
+        .header("authorization", "Bearer testtoken")
+        .body(Body::empty())
+        .unwrap();
     let resp = dbg.oneshot(req_dbg).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
 
-    let body_bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024).await.unwrap();
+    let body_bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
     assert!(v["buckets"].as_u64().unwrap() >= 2);
 }

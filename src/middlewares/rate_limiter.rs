@@ -1,16 +1,21 @@
-use axum::{http::{StatusCode, HeaderValue}, middleware::Next, response::Response, Json};
+use crate::utils::response::ApiResponse;
+use axum::Json as AxumJson;
 use axum::response::IntoResponse;
-use serde_json::json;
+use axum::{
+    Json,
+    http::{HeaderValue, StatusCode},
+    middleware::Next,
+    response::Response,
+};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::time::{Instant, Duration};
-use std::sync::atomic::AtomicBool;
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
-use crate::utils::response::ApiResponse;
-use axum::Json as AxumJson;
 use serde::Serialize;
+use serde_json::json;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 struct Bucket {
     tokens: f64,
@@ -26,12 +31,26 @@ static CLEANER_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn read_config() -> (f64, f64, String, String, u64, f64) {
     // returns (rate_per_sec, burst, key_priority, action, bucket_ttl_secs, request_cost)
-    let rate = std::env::var("RATE_LIMIT_RPS").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(100.0);
-    let burst = std::env::var("RATE_LIMIT_BURST").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(rate * 2.0);
-    let key_priority = std::env::var("RATE_LIMIT_KEY_PRIORITY").unwrap_or_else(|_| "ip".to_string());
+    let rate = std::env::var("RATE_LIMIT_RPS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(100.0);
+    let burst = std::env::var("RATE_LIMIT_BURST")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(rate * 2.0);
+    let key_priority =
+        std::env::var("RATE_LIMIT_KEY_PRIORITY").unwrap_or_else(|_| "ip".to_string());
     let action = std::env::var("RATE_LIMIT_ACTION").unwrap_or_else(|_| "block".to_string());
-    let ttl = std::env::var("RATE_LIMIT_BUCKET_TTL_SECS").ok().and_then(|v| v.parse::<u64>().ok()).unwrap_or(300);
-    let request_cost = std::env::var("RATE_LIMIT_REQUEST_COST").ok().and_then(|v| v.parse::<f64>().ok()).unwrap_or(1.0).max(0.0);
+    let ttl = std::env::var("RATE_LIMIT_BUCKET_TTL_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(300);
+    let request_cost = std::env::var("RATE_LIMIT_REQUEST_COST")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .unwrap_or(1.0)
+        .max(0.0);
     (rate, burst, key_priority, action, ttl, request_cost)
 }
 
@@ -48,7 +67,15 @@ struct CachedConfig {
 
 static CONFIG_CACHE: Lazy<parking_lot::Mutex<CachedConfig>> = Lazy::new(|| {
     let (rate, burst, key_priority, action, ttl, request_cost) = read_config();
-    parking_lot::Mutex::new(CachedConfig { rate, burst, key_priority, action, ttl_secs: ttl, request_cost, last_refresh: Instant::now() - Duration::from_secs(10) })
+    parking_lot::Mutex::new(CachedConfig {
+        rate,
+        burst,
+        key_priority,
+        action,
+        ttl_secs: ttl,
+        request_cost,
+        last_refresh: Instant::now() - Duration::from_secs(10),
+    })
 });
 
 fn get_config() -> (f64, f64, String, String, u64, f64) {
@@ -77,10 +104,20 @@ fn get_config() -> (f64, f64, String, String, u64, f64) {
         c.request_cost = request_cost;
         c.last_refresh = Instant::now();
     }
-    (c.rate, c.burst, c.key_priority.clone(), c.action.clone(), c.ttl_secs, c.request_cost)
+    (
+        c.rate,
+        c.burst,
+        c.key_priority.clone(),
+        c.action.clone(),
+        c.ttl_secs,
+        c.request_cost,
+    )
 }
 
-pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next) -> Result<Response, (StatusCode, Json<ApiResponse<serde_json::Value>>)> {
+pub async fn rate_limiter(
+    req: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, (StatusCode, Json<ApiResponse<serde_json::Value>>)> {
     let (rate, burst, key_priority, action, ttl_secs, request_cost) = get_config();
 
     // Determine key priority: can prefer auth token or ip. Supported values: "ip" (default), "auth", "auth+ip"
@@ -89,24 +126,44 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
     // Gather possible sources and include the source label to aid diagnostics
     // The tuple is (ip_value, source_label). Source labels match the header/extension
     // names used by clients/tests so debugging information is more precise.
-    let ip_source: Option<(String, String)> = if let Some(c) = req.extensions().get::<crate::middlewares::proxy::ClientIp>() {
+    let ip_source: Option<(String, String)> = if let Some(c) =
+        req.extensions()
+            .get::<crate::middlewares::proxy::ClientIp>()
+    {
         Some((c.0.to_string(), "extension".to_string()))
-    } else if let Some(v) = req.headers().get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+    } else if let Some(v) = req
+        .headers()
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+    {
         Some((v.to_string(), "cf-connecting-ip".to_string()))
-    } else if let Some(v) = req.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()).and_then(|s| s.split(',').next().map(|s2| s2.trim().to_string())) {
+    } else if let Some(v) = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next().map(|s2| s2.trim().to_string()))
+    {
         Some((v, "x-forwarded-for".to_string()))
     } else if let Some(v) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
         Some((v.to_string(), "x-real-ip".to_string()))
-    } else { req.extensions().get::<std::net::SocketAddr>().map(|sa| (sa.ip().to_string(), "peer".to_string())) };
+    } else {
+        req.extensions()
+            .get::<std::net::SocketAddr>()
+            .map(|sa| (sa.ip().to_string(), "peer".to_string()))
+    };
 
-    let auth_token_opt = req.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|s| {
-        let s = s.trim();
-        if s.to_lowercase().starts_with("bearer ") {
-            Some(s[7..].trim().to_string())
-        } else {
-            None
-        }
-    });
+    let auth_token_opt = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| {
+            let s = s.trim();
+            if s.to_lowercase().starts_with("bearer ") {
+                Some(s[7..].trim().to_string())
+            } else {
+                None
+            }
+        });
 
     // fingerprint helper (u64 hex)
     fn fingerprint(s: &str) -> String {
@@ -116,35 +173,67 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
     }
 
     // Build the actual key and record key_source/type for diagnostics
-    println!("DEBUG: rate_limiter: key_priority='{}' ip_present={} auth_present={}", key_priority, ip_source.is_some(), auth_token_opt.is_some());
+    println!(
+        "DEBUG: rate_limiter: key_priority='{}' ip_present={} auth_present={}",
+        key_priority,
+        ip_source.is_some(),
+        auth_token_opt.is_some()
+    );
     let (key, key_source, key_type) = match key_priority.as_str() {
         "auth" => {
             if let Some(tok) = &auth_token_opt {
-                (fingerprint(tok), "authorization".to_string(), "auth".to_string())
+                (
+                    fingerprint(tok),
+                    "authorization".to_string(),
+                    "auth".to_string(),
+                )
             } else if let Some((ip, src)) = ip_source.clone() {
                 (ip, format!("fallback-{}", src), "ip".to_string())
             } else {
-                ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
+                (
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                )
             }
         }
         "auth+ip" => {
             if let Some(tok) = &auth_token_opt {
                 let f = fingerprint(tok);
-                let ip_part = ip_source.clone().map(|(ip, _src)| ip).unwrap_or_else(|| "-".to_string());
-                (format!("auth:{}:ip:{}", f, ip_part), "authorization+ip".to_string(), "auth+ip".to_string())
+                let ip_part = ip_source
+                    .clone()
+                    .map(|(ip, _src)| ip)
+                    .unwrap_or_else(|| "-".to_string());
+                (
+                    format!("auth:{}:ip:{}", f, ip_part),
+                    "authorization+ip".to_string(),
+                    "auth+ip".to_string(),
+                )
             } else if let Some((ip, src)) = ip_source.clone() {
                 (ip, format!("fallback-{}", src), "ip".to_string())
             } else {
-                ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
+                (
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                )
             }
         }
         _ => {
             if let Some((ip, src)) = ip_source.clone() {
                 (ip, src, "ip".to_string())
             } else if let Some(tok) = &auth_token_opt {
-                (fingerprint(tok), "authorization".to_string(), "auth".to_string())
+                (
+                    fingerprint(tok),
+                    "authorization".to_string(),
+                    "auth".to_string(),
+                )
             } else {
-                ("unknown".to_string(), "unknown".to_string(), "unknown".to_string())
+                (
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                )
             }
         }
     };
@@ -155,7 +244,13 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
 
     // Narrow the scope for the lock so the guard does not live across awaits
     let (allowed, remaining, limit_header) = {
-        let entry = BUCKETS.entry(key.clone()).or_insert_with(|| Mutex::new(Bucket { tokens: burst, last: now, last_access: now }));
+        let entry = BUCKETS.entry(key.clone()).or_insert_with(|| {
+            Mutex::new(Bucket {
+                tokens: burst,
+                last: now,
+                last_access: now,
+            })
+        });
         let mut bucket = entry.lock();
         let elapsed = now.duration_since(bucket.last).as_secs_f64();
         bucket.tokens = (bucket.tokens + elapsed * rate).min(burst);
@@ -177,12 +272,18 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
         if let Ok(hv) = HeaderValue::from_str(&limit_header.to_string()) {
             resp.headers_mut().insert("x-ratelimit-limit", hv);
         } else {
-            tracing::warn!("rate_limiter: failed to set x-ratelimit-limit header for key={}", key);
+            tracing::warn!(
+                "rate_limiter: failed to set x-ratelimit-limit header for key={}",
+                key
+            );
         }
         if let Ok(hv) = HeaderValue::from_str(&remaining.to_string()) {
             resp.headers_mut().insert("x-ratelimit-remaining", hv);
         } else {
-            tracing::warn!("rate_limiter: failed to set x-ratelimit-remaining header for key={}", key);
+            tracing::warn!(
+                "rate_limiter: failed to set x-ratelimit-remaining header for key={}",
+                key
+            );
         }
         // Add debug headers indicating which source produced the key and the key type
         if let Ok(hv) = HeaderValue::from_str(&key_source) {
@@ -194,7 +295,13 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
         Ok(resp)
     } else {
         // Log blocked key and its source for debugging (helps distinguish proxy IP vs client IP)
-        tracing::warn!("rate_limiter: blocked key = {} source={} rate={} burst={}", key, key_source, rate, burst);
+        tracing::warn!(
+            "rate_limiter: blocked key = {} source={} rate={} burst={}",
+            key,
+            key_source,
+            rate,
+            burst
+        );
 
         // RATE_LIMIT_ACTION can be "block" (default), "drop", or "throttle" (future).
         // Use the cached `action` from config
@@ -213,7 +320,10 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
             return Ok(resp);
         }
 
-        let response = ApiResponse::error_with_data("Too Many Requests", json!({ "error": "Rate limit exceeded" }));
+        let response = ApiResponse::error_with_data(
+            "Too Many Requests",
+            json!({ "error": "Rate limit exceeded" }),
+        );
         // Construct response with Retry-After header (1 second) and rate headers
         let retry_after_secs = 1;
         let mut resp = (StatusCode::TOO_MANY_REQUESTS, Json(response)).into_response();
@@ -241,20 +351,32 @@ struct RateLimiterTopEntry {
 
 /// Debug endpoint for inspecting rate limiter buckets. Visible only when `RATE_LIMIT_DEBUG=true`.
 pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl IntoResponse {
-    let enabled = std::env::var("RATE_LIMIT_DEBUG").map(|v| v == "true").unwrap_or(false);
+    let enabled = std::env::var("RATE_LIMIT_DEBUG")
+        .map(|v| v == "true")
+        .unwrap_or(false);
     if !enabled {
-        return (StatusCode::NOT_FOUND, AxumJson(json!({ "error": "not found" }))); 
+        return (
+            StatusCode::NOT_FOUND,
+            AxumJson(json!({ "error": "not found" })),
+        );
     }
 
     // Optional token guard for safety in public environments
     if let Ok(token) = std::env::var("RATE_LIMIT_DEBUG_TOKEN") {
         // require Authorization: Bearer <token>
-        match req.headers().get("authorization").and_then(|v| v.to_str().ok()) {
+        match req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+        {
             Some(h) if h.trim().to_lowercase().starts_with("bearer ") && h[7..].trim() == token => {
                 // ok
             }
             _ => {
-                let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Missing or invalid Authorization header" }));
+                let response = ApiResponse::error_with_data(
+                    "Unauthorized",
+                    json!({ "error": "Missing or invalid Authorization header" }),
+                );
                 return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
             }
         }
@@ -262,12 +384,18 @@ pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl Into
         // If no debug token is set, allow only local requests (loopback) to protect exposed instances
         if let Some(sa) = req.extensions().get::<std::net::SocketAddr>() {
             if !sa.ip().is_loopback() {
-                let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Missing Authorization header" }));
+                let response = ApiResponse::error_with_data(
+                    "Unauthorized",
+                    json!({ "error": "Missing Authorization header" }),
+                );
                 return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
             }
         } else {
             // No peer info available; deny to be safe
-            let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Missing Authorization header" }));
+            let response = ApiResponse::error_with_data(
+                "Unauthorized",
+                json!({ "error": "Missing Authorization header" }),
+            );
             return (StatusCode::UNAUTHORIZED, AxumJson(json!(response)));
         }
     }
@@ -279,17 +407,33 @@ pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl Into
     for k in keys {
         if let Some(entry) = BUCKETS.get(&k) {
             let bucket = entry.value().lock();
-            samples.push(RateLimiterTopEntry { key: k.clone(), tokens: bucket.tokens });
+            samples.push(RateLimiterTopEntry {
+                key: k.clone(),
+                tokens: bucket.tokens,
+            });
         }
     }
 
     // top by tokens (highest remaining)
-    samples.sort_by(|a, b| a.tokens.partial_cmp(&b.tokens).unwrap_or(std::cmp::Ordering::Equal));
+    samples.sort_by(|a, b| {
+        a.tokens
+            .partial_cmp(&b.tokens)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     samples.reverse();
-    let top: Vec<serde_json::Value> = samples.iter().take(50).map(|e| json!({"key": e.key, "tokens": e.tokens})).collect();
+    let top: Vec<serde_json::Value> = samples
+        .iter()
+        .take(50)
+        .map(|e| json!({"key": e.key, "tokens": e.tokens}))
+        .collect();
 
     // bottom by tokens (most drained / likely blocked)
-    let bottom: Vec<serde_json::Value> = samples.iter().rev().take(50).map(|e| json!({"key": e.key, "tokens": e.tokens})).collect();
+    let bottom: Vec<serde_json::Value> = samples
+        .iter()
+        .rev()
+        .take(50)
+        .map(|e| json!({"key": e.key, "tokens": e.tokens}))
+        .collect();
 
     // include runtime config to aid debugging
     let (rate_cfg, burst_cfg, key_priority, action, ttl_cfg, request_cost_cfg) = get_config();
@@ -312,7 +456,10 @@ pub async fn debug_info(req: axum::http::Request<axum::body::Body>) -> impl Into
 // Start the cleaner only once per process
 fn ensure_cleaner_started(ttl_secs: u64) {
     use std::sync::atomic::Ordering;
-    if CLEANER_STARTED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+    if CLEANER_STARTED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
         // spawn background cleaner
         tokio::spawn(async move {
             let sleep_interval = Duration::from_secs(30);
@@ -325,7 +472,11 @@ fn ensure_cleaner_started(ttl_secs: u64) {
 }
 
 async fn purge_stale_buckets(ttl_secs: u64) {
-    println!("DEBUG: purge_stale_buckets: start ttl={} buckets_before={}", ttl_secs, BUCKETS.len());
+    println!(
+        "DEBUG: purge_stale_buckets: start ttl={} buckets_before={}",
+        ttl_secs,
+        BUCKETS.len()
+    );
     let now = Instant::now();
     let mut removed_count = 0usize;
     let keys: Vec<String> = BUCKETS.iter().map(|r| r.key().clone()).collect();
@@ -344,14 +495,17 @@ async fn purge_stale_buckets(ttl_secs: u64) {
             false
         };
 
-        if should_remove
-            && BUCKETS.remove(&k).is_some() {
-                removed_count += 1;
-                tracing::info!("rate_limiter: purged stale bucket key={}", k);
-            }
+        if should_remove && BUCKETS.remove(&k).is_some() {
+            removed_count += 1;
+            tracing::info!("rate_limiter: purged stale bucket key={}", k);
+        }
     }
 
-    println!("DEBUG: purge_stale_buckets: done removed={} buckets_after={}", removed_count, BUCKETS.len());
+    println!(
+        "DEBUG: purge_stale_buckets: done removed={} buckets_after={}",
+        removed_count,
+        BUCKETS.len()
+    );
 }
 
 // Test helper to purge once (exposed for integration tests)

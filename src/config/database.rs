@@ -1,28 +1,39 @@
-use sqlx::mysql::{MySqlPoolOptions, MySqlPool};
+use sqlx::mysql::{MySqlPool, MySqlPoolOptions};
 use std::error::Error;
 
 pub async fn establish_connection() -> Result<MySqlPool, Box<dyn Error + Send + Sync>> {
     // Load the DATABASE_URL from environment variables
-    let database_url = std::env::var("DATABASE_URL").map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
+    let database_url =
+        std::env::var("DATABASE_URL").map_err(|e| Box::new(e) as Box<dyn Error + Send + Sync>)?;
 
     // Create and return the MySQL connection pool
-    let pool_size: u32 = std::env::var("DB_POOL_SIZE").ok()
+    let pool_size: u32 = std::env::var("DB_POOL_SIZE")
+        .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(20);
 
-    let min_connections: u32 = std::env::var("DB_POOL_MIN").ok()
+    let min_connections: u32 = std::env::var("DB_POOL_MIN")
+        .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(std::cmp::min(pool_size, 5));
 
-    let connect_timeout_secs: u64 = std::env::var("DB_CONNECT_TIMEOUT_SECS").ok()
+    let connect_timeout_secs: u64 = std::env::var("DB_CONNECT_TIMEOUT_SECS")
+        .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(5);
 
-    let acquire_timeout_secs: u64 = std::env::var("DB_ACQUIRE_TIMEOUT_SECS").ok()
+    let acquire_timeout_secs: u64 = std::env::var("DB_ACQUIRE_TIMEOUT_SECS")
+        .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(10);
 
-    tracing::info!("Using DB pool size: {} (min: {}, connect_timeout: {}s, acquire_timeout: {}s)", pool_size, min_connections, connect_timeout_secs, acquire_timeout_secs);
+    tracing::info!(
+        "Using DB pool size: {} (min: {}, connect_timeout: {}s, acquire_timeout: {}s)",
+        pool_size,
+        min_connections,
+        connect_timeout_secs,
+        acquire_timeout_secs
+    );
 
     let pool = MySqlPoolOptions::new()
         .max_connections(pool_size)
@@ -44,29 +55,42 @@ pub async fn establish_connection() -> Result<MySqlPool, Box<dyn Error + Send + 
         let err_str = format!("{}", e);
 
         // Helper to perform delete+retry for a given version string
-        async fn delete_and_retry(pool: &MySqlPool, version: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-            tracing::warn!("Detected partially applied migration {}. Attempting recovery...", version);
+        async fn delete_and_retry(
+            pool: &MySqlPool,
+            version: &str,
+        ) -> Result<(), Box<dyn Error + Send + Sync>> {
+            tracing::warn!(
+                "Detected partially applied migration {}. Attempting recovery...",
+                version
+            );
             match sqlx::query("DELETE FROM `_sqlx_migrations` WHERE version = ?")
                 .bind(version)
                 .execute(pool)
                 .await
             {
                 Ok(_) => {
-                    tracing::info!("Deleted partial migration row for {}. Retrying migrations.", version);
+                    tracing::info!(
+                        "Deleted partial migration row for {}. Retrying migrations.",
+                        version
+                    );
                 }
                 Err(del_err) => {
-                    tracing::error!("Failed to delete partial migration row for {}: {}", version, del_err);
+                    tracing::error!(
+                        "Failed to delete partial migration row for {}: {}",
+                        version,
+                        del_err
+                    );
                     return Err(Box::new(del_err));
                 }
             }
 
             // Retry migrations once
             if let Err(retry_err) = sqlx::migrate!("./migrations").run(pool).await {
-                    tracing::error!("Retry failed: {}", retry_err);
-                    return Err(Box::new(retry_err));
-                } else {
-                    tracing::info!("Database migrations applied successfully after recovery");
-                }
+                tracing::error!("Retry failed: {}", retry_err);
+                return Err(Box::new(retry_err));
+            } else {
+                tracing::info!("Database migrations applied successfully after recovery");
+            }
             Ok(())
         }
 
@@ -91,7 +115,10 @@ pub async fn establish_connection() -> Result<MySqlPool, Box<dyn Error + Send + 
             let rest = &err_str[idx + "migration ".len()..];
             // take leading digits as version
             let version_digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if !version_digits.is_empty() && (rest.contains("partially applied") || (rest.contains("previously applied") && rest.contains("modified"))) {
+            if !version_digits.is_empty()
+                && (rest.contains("partially applied")
+                    || (rest.contains("previously applied") && rest.contains("modified")))
+            {
                 delete_and_retry(&pool, &version_digits).await?;
             } else {
                 eprintln!("Migration error (unexpected format): {}", err_str);

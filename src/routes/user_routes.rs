@@ -1,11 +1,10 @@
 use axum::{
-    Router,
+    Router, middleware,
     routing::{get, post},
-    middleware,
 };
 
 // Import user-related handlers
-use crate::handlers::user_handler::{ index, store, show, update, destroy };
+use crate::handlers::user_handler::{destroy, index, show, store, update};
 
 // Import middleware for authentication
 use crate::middlewares::auth_middleware::auth_middleware;

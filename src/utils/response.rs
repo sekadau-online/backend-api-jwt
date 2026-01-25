@@ -26,4 +26,4 @@ impl<T> ApiResponse<T> {
             data: Some(data),
         }
     }
-}  
+}

@@ -1,7 +1,7 @@
 use backend_api_jwt::create_app;
 use serde_json::json;
-use sqlx::{MySqlPool, Executor};
-use tokio::time::{sleep, Duration};
+use sqlx::{Executor, MySqlPool};
+use tokio::time::{Duration, sleep};
 
 #[tokio::test]
 async fn user_store_flow() {
@@ -10,20 +10,31 @@ async fn user_store_flow() {
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)");
+            eprintln!(
+                "Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)"
+            );
             return;
         }
     };
 
     // Ensure JWT secret is set for token generation (unsafe required in tests)
-    unsafe { std::env::set_var("JWT_SECRET", std::env::var("JWT_SECRET").unwrap_or_else(|_| "test_secret".to_string())); }
+    unsafe {
+        std::env::set_var(
+            "JWT_SECRET",
+            std::env::var("JWT_SECRET").unwrap_or_else(|_| "test_secret".to_string()),
+        );
+    }
 
-    let (base, _db) = database_url.rsplit_once('/').expect("DATABASE_URL should include db name");
+    let (base, _db) = database_url
+        .rsplit_once('/')
+        .expect("DATABASE_URL should include db name");
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_store";
 
     // connect as admin and recreate a clean test database
-    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
+    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url))
+        .await
+        .expect("connect admin");
     admin_pool
         .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
         .await
@@ -36,8 +47,13 @@ async fn user_store_flow() {
     let test_db_url = format!("{}/{}", admin_url, test_db);
 
     // connect to test db and run migrations
-    let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
-    sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
+    let pool = MySqlPool::connect(&test_db_url)
+        .await
+        .expect("connect test db");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations");
 
     // ensure users table exists
     let create_sql = r#"
@@ -69,19 +85,25 @@ async fn user_store_flow() {
     let admin_id = insert_res.last_insert_id() as i64;
 
     // Generate JWT token for admin user
-    let token = backend_api_jwt::utils::jwt::generate_jwt_token(admin_id).await.expect("generate token");
+    let token = backend_api_jwt::utils::jwt::generate_jwt_token(admin_id)
+        .await
+        .expect("generate token");
 
     // Build app and run server on ephemeral port
     let app = create_app(pool.clone());
 
     // Bind to an ephemeral port using tokio listener (host from APP_HOST)
     let host = std::env::var("APP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await.expect("bind");
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", host))
+        .await
+        .expect("bind");
     let addr = listener.local_addr().unwrap();
 
     // Serve the app in background
     let server = axum::serve(listener, app.into_make_service());
-    let _srv = tokio::spawn(async move { server.await.unwrap(); });
+    let _srv = tokio::spawn(async move {
+        server.await.unwrap();
+    });
 
     // Give the server a moment to start
     sleep(Duration::from_millis(100)).await;
@@ -110,7 +132,10 @@ async fn user_store_flow() {
     let body: serde_json::Value = res.json().await.expect("json");
     assert!(body["success"].as_bool().unwrap_or(false));
     let created = &body["data"];
-    assert_eq!(created["email"].as_str().unwrap_or(""), "newuser@example.com");
+    assert_eq!(
+        created["email"].as_str().unwrap_or(""),
+        "newuser@example.com"
+    );
 
     // Duplicate -> 409
     let res2 = client

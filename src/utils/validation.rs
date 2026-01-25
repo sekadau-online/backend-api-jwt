@@ -1,20 +1,31 @@
-use axum::{http::StatusCode, Json};
-use validator::Validate;
-use serde_json::{json, Value};
 use crate::utils::response::ApiResponse;
+use axum::{Json, http::StatusCode};
+use serde_json::{Value, json};
+use validator::Validate;
 
 /// Validate a payload implementing `validator::Validate` and return an axum-compatible
 /// error tuple on validation failure so handlers can `?` it.
-pub fn validate_payload<T: Validate>(payload: &T) -> Result<(), (StatusCode, Json<ApiResponse<Value>>)> {
+pub fn validate_payload<T: Validate>(
+    payload: &T,
+) -> Result<(), (StatusCode, Json<ApiResponse<Value>>)> {
     if let Err(errors) = payload.validate() {
         let mut errors_map = serde_json::Map::new();
         for (field, errs) in errors.field_errors().iter() {
-            let msgs: Vec<String> = errs.iter()
-                .map(|e| e.message.clone().unwrap_or_else(|| "Invalid input".into()).to_string())
+            let msgs: Vec<String> = errs
+                .iter()
+                .map(|e| {
+                    e.message
+                        .clone()
+                        .unwrap_or_else(|| "Invalid input".into())
+                        .to_string()
+                })
                 .collect();
             errors_map.insert(field.to_string(), json!(msgs));
         }
-        let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
+        let response = ApiResponse::error_with_data(
+            "Validation error",
+            json!({ "errors": serde_json::Value::Object(errors_map) }),
+        );
         return Err((StatusCode::BAD_REQUEST, Json(response)));
     }
     Ok(())

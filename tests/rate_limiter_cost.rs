@@ -1,6 +1,6 @@
-use axum::{Router, routing::get, http::Request, body::Body};
-use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use axum::middleware;
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
@@ -20,7 +20,9 @@ async fn request_cost_allows_multiple_quick_requests() {
     for _ in 0..5 {
         let req = Request::builder().uri("/").body(Body::empty()).unwrap();
         let resp = app.clone().oneshot(req).await.unwrap();
-        if resp.status().as_u16() == 200 { ok_count += 1; }
+        if resp.status().as_u16() == 200 {
+            ok_count += 1;
+        }
     }
     assert_eq!(ok_count, 5);
 

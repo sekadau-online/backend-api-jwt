@@ -1,6 +1,6 @@
-use axum::{Router, routing::get, http::Request, body::Body};
-use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use axum::middleware;
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
@@ -50,7 +50,12 @@ async fn rate_limiter_uses_auth_plus_ip_when_configured() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
     let key_type = resp.headers().get("x-key-type").unwrap().to_str().unwrap();
-    let key_source = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let key_source = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     println!("DEBUG: key_type={} key_source={}", key_type, key_source);
     assert_eq!(key_type, "auth+ip");
 }

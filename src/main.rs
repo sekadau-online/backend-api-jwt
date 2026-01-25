@@ -1,5 +1,5 @@
-use std::net::SocketAddr;
 use dotenvy::dotenv;
+use std::net::SocketAddr;
 
 use backend_api_jwt::config;
 use backend_api_jwt::create_app;
@@ -11,7 +11,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Friendly check for required env before we attempt to connect
     if std::env::var("DATABASE_URL").is_err() {
-        return Err(Box::<dyn std::error::Error + Send + Sync>::from("Error: DATABASE_URL is not set. Copy `.env.test` to `.env` and update credentials, or set DATABASE_URL in your environment. See README.md for details."));
+        return Err(Box::<dyn std::error::Error + Send + Sync>::from(
+            "Error: DATABASE_URL is not set. Copy `.env.test` to `.env` and update credentials, or set DATABASE_URL in your environment. See README.md for details.",
+        ));
     }
 
     // Initialize tracing for structured logs
@@ -39,15 +41,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Print the server address
     tracing::info!("Listening on http://{}", addr);
-    
+
     // Start the server and handle shutdown via ctrl-c / SIGTERM
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     let shutdown_signal = {
         #[cfg(unix)]
         {
-            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to create SIGTERM handler");
+            let mut sigterm =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("failed to create SIGTERM handler");
             async move {
                 tokio::select! {
                     _ = tokio::signal::ctrl_c() => {
@@ -69,10 +74,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
-    let server = axum::serve(listener, app.into_make_service())
-        .with_graceful_shutdown(shutdown_signal);
+    let server =
+        axum::serve(listener, app.into_make_service()).with_graceful_shutdown(shutdown_signal);
 
-    server.await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+    server
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
 
     Ok(())
 }

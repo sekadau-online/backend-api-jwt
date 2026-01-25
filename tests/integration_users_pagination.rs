@@ -1,6 +1,6 @@
 use backend_api_jwt::create_app;
-use sqlx::{MySqlPool, Executor};
-use tokio::time::{sleep, Duration};
+use sqlx::{Executor, MySqlPool};
+use tokio::time::{Duration, sleep};
 
 #[tokio::test]
 async fn users_pagination_flow() {
@@ -9,17 +9,23 @@ async fn users_pagination_flow() {
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)");
+            eprintln!(
+                "Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)"
+            );
             return;
         }
     };
 
-    let (base, _db) = database_url.rsplit_once('/').expect("DATABASE_URL should include db name");
+    let (base, _db) = database_url
+        .rsplit_once('/')
+        .expect("DATABASE_URL should include db name");
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_users_pagination";
 
     // connect as admin and recreate a clean test database
-    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
+    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url))
+        .await
+        .expect("connect admin");
     admin_pool
         .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
         .await
@@ -32,8 +38,13 @@ async fn users_pagination_flow() {
     let test_db_url = format!("{}/{}", admin_url, test_db);
 
     // connect to test db and run migrations
-    let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
-    sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
+    let pool = MySqlPool::connect(&test_db_url)
+        .await
+        .expect("connect test db");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations");
 
     // ensure users table exists
     let create_sql = r#"
@@ -71,12 +82,16 @@ async fn users_pagination_flow() {
 
     // Bind to an ephemeral port using tokio listener (host from APP_HOST)
     let host = std::env::var("APP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await.expect("bind");
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", host))
+        .await
+        .expect("bind");
     let addr = listener.local_addr().unwrap();
 
     // Serve the app in background
     let server = axum::serve(listener, app.into_make_service());
-    let _srv = tokio::spawn(async move { server.await.unwrap(); });
+    let _srv = tokio::spawn(async move {
+        server.await.unwrap();
+    });
 
     // Give the server a moment to start
     sleep(Duration::from_millis(100)).await;
@@ -93,7 +108,10 @@ async fn users_pagination_flow() {
         .expect("login request failed");
     assert_eq!(login_res.status().as_u16(), 200);
     let login_body: serde_json::Value = login_res.json().await.expect("login json");
-    let token = login_body["data"]["token"].as_str().expect("token").to_string();
+    let token = login_body["data"]["token"]
+        .as_str()
+        .expect("token")
+        .to_string();
 
     let url = format!("http://{}/users?page=2&per_page=50", addr);
 

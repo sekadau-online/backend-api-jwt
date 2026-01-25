@@ -1,4 +1,4 @@
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 /// Verify a password against a bcrypt hash in a blocking thread with a timeout.
 /// Returns Ok(true) if password matches, Ok(false) if not, Err on internal errors/timeouts.
@@ -37,7 +37,9 @@ pub async fn hash_password_blocking(
             Ok(Err(e)) => Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
             Err(join_err) => Err(Box::new(join_err) as Box<dyn std::error::Error + Send + Sync>),
         },
-        Err(_) => Err(Box::<dyn std::error::Error + Send + Sync>::from("password hashing timed out")),
+        Err(_) => Err(Box::<dyn std::error::Error + Send + Sync>::from(
+            "password hashing timed out",
+        )),
     }
 }
 
@@ -48,8 +50,12 @@ mod tests {
     #[tokio::test]
     async fn test_hash_and_verify() {
         let pw = "hunter2".to_string();
-        let hash = hash_password_blocking(pw.clone(), bcrypt::DEFAULT_COST, Some(5)).await.expect("hash");
-        let ok = verify_password_blocking(pw, hash, Some(5)).await.expect("verify");
+        let hash = hash_password_blocking(pw.clone(), bcrypt::DEFAULT_COST, Some(5))
+            .await
+            .expect("hash");
+        let ok = verify_password_blocking(pw, hash, Some(5))
+            .await
+            .expect("verify");
         assert!(ok);
     }
 }

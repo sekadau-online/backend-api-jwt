@@ -1,9 +1,9 @@
-use axum::{Router, routing::get, http::Request, body::Body};
-use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
-use backend_api_jwt::middlewares::proxy::ClientIp;
 use axum::middleware;
-use tower::util::ServiceExt; // brings .oneshot()
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::proxy::ClientIp;
+use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use std::net::{IpAddr, SocketAddr};
+use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
 #[serial_test::serial]
@@ -17,20 +17,22 @@ async fn rate_limiter_uses_extension_source_when_present() {
         .route("/", get(|| async { "ok" }))
         .layer(middleware::from_fn(rate_limiter));
 
-    let mut req = Request::builder()
-        .uri("/")
-        .body(Body::empty())
-        .unwrap();
+    let mut req = Request::builder().uri("/").body(Body::empty()).unwrap();
     // simulate proxy setting the ClientIp extension
-    req.extensions_mut().insert(ClientIp(IpAddr::from([1,2,3,4])));
+    req.extensions_mut()
+        .insert(ClientIp(IpAddr::from([1, 2, 3, 4])));
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
-    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(header_val, "extension");
     // Now assert x-key-type header reports ip/auth type if present (default is ip)
     // x-key-type will be set in a follow-up request after changes
-
 }
 
 #[tokio::test]
@@ -44,17 +46,19 @@ async fn rate_limiter_uses_peer_source_when_no_extension() {
         .route("/", get(|| async { "ok" }))
         .layer(middleware::from_fn(rate_limiter));
 
-    let mut req = Request::builder()
-        .uri("/")
-        .body(Body::empty())
-        .unwrap();
+    let mut req = Request::builder().uri("/").body(Body::empty()).unwrap();
     // simulate peer socket addr
-    let sa = SocketAddr::new(IpAddr::from([203,0,113,5]), 12345);
+    let sa = SocketAddr::new(IpAddr::from([203, 0, 113, 5]), 12345);
     req.extensions_mut().insert(sa);
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
-    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(header_val, "peer");
 }
 
@@ -77,7 +81,12 @@ async fn rate_limiter_uses_cf_connecting_ip_header_when_present() {
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
-    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(header_val, "cf-connecting-ip");
 }
 
@@ -100,7 +109,12 @@ async fn rate_limiter_uses_x_forwarded_for_header_when_present() {
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
-    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(header_val, "x-forwarded-for");
 }
 
@@ -123,6 +137,11 @@ async fn rate_limiter_uses_x_real_ip_header_when_present() {
 
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status().as_u16(), 200);
-    let header_val = resp.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     assert_eq!(header_val, "x-real-ip");
 }

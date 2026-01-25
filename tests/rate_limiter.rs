@@ -1,6 +1,6 @@
-use axum::{Router, routing::get, http::Request, body::Body};
-use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use axum::middleware;
+use axum::{Router, body::Body, http::Request, routing::get};
+use backend_api_jwt::middlewares::rate_limiter::rate_limiter;
 use tower::util::ServiceExt; // brings .oneshot()
 
 #[tokio::test]
@@ -45,7 +45,12 @@ async fn rate_limiter_blocks_after_burst() {
     let resp3 = app.clone().oneshot(req3).await.unwrap();
     // 429 response should include x-key-source header (xff)
     assert_eq!(resp3.status().as_u16(), 429);
-    let header_val = resp3.headers().get("x-key-source").unwrap().to_str().unwrap();
+    let header_val = resp3
+        .headers()
+        .get("x-key-source")
+        .unwrap()
+        .to_str()
+        .unwrap();
     // key source reflects the specific header used (here: x-forwarded-for)
     assert_eq!(header_val, "x-forwarded-for");
 }

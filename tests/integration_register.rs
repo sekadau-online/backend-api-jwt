@@ -1,7 +1,7 @@
 use backend_api_jwt::create_app;
 use serde_json::json;
-use sqlx::{MySqlPool, Executor};
-use tokio::time::{sleep, Duration};
+use sqlx::{Executor, MySqlPool};
+use tokio::time::{Duration, sleep};
 
 #[tokio::test]
 async fn register_flow() {
@@ -10,16 +10,22 @@ async fn register_flow() {
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)");
+            eprintln!(
+                "Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)"
+            );
             return;
         }
     };
-    let (base, _db) = database_url.rsplit_once('/').expect("DATABASE_URL should include db name");
+    let (base, _db) = database_url
+        .rsplit_once('/')
+        .expect("DATABASE_URL should include db name");
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test";
 
     // connect as admin and recreate a clean test database
-    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
+    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url))
+        .await
+        .expect("connect admin");
     admin_pool
         .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
         .await
@@ -40,8 +46,13 @@ async fn register_flow() {
     let test_db_url = format!("{}/{}", admin_url, test_db);
 
     // connect to test db and run migrations
-    let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
-    sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
+    let pool = MySqlPool::connect(&test_db_url)
+        .await
+        .expect("connect test db");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations");
     // ensure users table exists; if migration didn't create it, apply SQL directly (defensive)
     let exists: i64 = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = 'users')")
         .bind(test_db)
@@ -50,8 +61,11 @@ async fn register_flow() {
         .expect("info query");
     if exists == 0 {
         // read migration SQL file and execute
-        let sql = std::fs::read_to_string("migrations/20260122100826_create_users_table.sql").expect("read migration");
-        pool.execute(sql.as_str()).await.expect("apply raw migration");
+        let sql = std::fs::read_to_string("migrations/20260122100826_create_users_table.sql")
+            .expect("read migration");
+        pool.execute(sql.as_str())
+            .await
+            .expect("apply raw migration");
     }
 
     // Defensive: ensure users table exists (create if not)
@@ -75,12 +89,16 @@ async fn register_flow() {
 
     // Bind to an ephemeral port using tokio listener (host from APP_HOST)
     let host = std::env::var("APP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await.expect("bind");
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", host))
+        .await
+        .expect("bind");
     let addr = listener.local_addr().unwrap();
 
     // Serve the app in background
     let server = axum::serve(listener, app.into_make_service());
-    let _srv = tokio::spawn(async move { server.await.unwrap(); });
+    let _srv = tokio::spawn(async move {
+        server.await.unwrap();
+    });
 
     // Give the server a moment to start
     sleep(Duration::from_millis(100)).await;
@@ -129,16 +147,22 @@ async fn register_validation_errors() {
     let database_url = match std::env::var("DATABASE_URL") {
         Ok(v) => v,
         Err(_) => {
-            eprintln!("Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)");
+            eprintln!(
+                "Skipping integration test: set DATABASE_URL in your environment (example: mysql://user:pass@host:3306/db)"
+            );
             return;
         }
     };
-    let (base, _db) = database_url.rsplit_once('/').expect("DATABASE_URL should include db name");
+    let (base, _db) = database_url
+        .rsplit_once('/')
+        .expect("DATABASE_URL should include db name");
     let admin_url = base.to_string();
     let test_db = "db_backend_api_jwt_test_validation";
 
     // connect as admin and recreate a clean test database
-    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url)).await.expect("connect admin");
+    let admin_pool = MySqlPool::connect(&format!("{}/", admin_url))
+        .await
+        .expect("connect admin");
     admin_pool
         .execute(format!("DROP DATABASE IF EXISTS {}", test_db).as_str())
         .await
@@ -154,8 +178,13 @@ async fn register_validation_errors() {
     let test_db_url = format!("{}/{}", admin_url, test_db);
 
     // connect to test db and run migrations
-    let pool = MySqlPool::connect(&test_db_url).await.expect("connect test db");
-    sqlx::migrate!("./migrations").run(&pool).await.expect("migrations");
+    let pool = MySqlPool::connect(&test_db_url)
+        .await
+        .expect("connect test db");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("migrations");
     // ensure users table exists
     let create_sql = r#"
     CREATE TABLE IF NOT EXISTS users (
@@ -177,12 +206,16 @@ async fn register_validation_errors() {
 
     // Bind to an ephemeral port using tokio listener (host from APP_HOST)
     let host = std::env::var("APP_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let listener = tokio::net::TcpListener::bind(format!("{}:0", host)).await.expect("bind");
+    let listener = tokio::net::TcpListener::bind(format!("{}:0", host))
+        .await
+        .expect("bind");
     let addr = listener.local_addr().unwrap();
 
     // Serve the app in background
     let server = axum::serve(listener, app.into_make_service());
-    let _srv = tokio::spawn(async move { server.await.unwrap(); });
+    let _srv = tokio::spawn(async move {
+        server.await.unwrap();
+    });
 
     // Give the server a moment to start
     sleep(Duration::from_millis(100)).await;

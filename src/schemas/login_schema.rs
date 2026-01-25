@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
-use validator::Validate;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 #[derive(Debug, Serialize, Deserialize, Validate)]
 pub struct LoginSchema {
@@ -9,7 +9,7 @@ pub struct LoginSchema {
 
     #[validate(length(min = 6, message = "Password must be at least 6 characters long"))]
     pub password: String,
-} 
+}
 
 #[derive(sqlx::FromRow, Debug, Serialize, Deserialize)]
 pub struct UserLoginResponseSchema {
@@ -24,4 +24,4 @@ pub struct UserLoginResponseSchema {
 pub struct LoginResponseSchema {
     pub user: UserLoginResponseSchema,
     pub token: String,
-} 
+}

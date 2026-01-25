@@ -1,13 +1,9 @@
-use axum::{
-    Extension,
-    Json,
-    http::StatusCode,
-};
-use sqlx::MySqlPool;
-use serde_json::json;
 use crate::utils::handler::HandlerResult;
+use axum::{Extension, Json, http::StatusCode};
+use serde_json::json;
+use sqlx::MySqlPool;
 // Import schemas request and response register
-use crate::schemas::register_schema::{RegisterSchema, RegisterResponseSchema};
+use crate::schemas::register_schema::{RegisterResponseSchema, RegisterSchema};
 // Import util response API
 use crate::utils::response::ApiResponse;
 
@@ -27,28 +23,41 @@ pub async fn register_handler(
         .fetch_one(&db_pool)
         .await
         .map_err(|e| {
-            let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to check existing user", "details": e.to_string() }));
+            let response = ApiResponse::error_with_data(
+                "Database error",
+                json!({ "error": "Failed to check existing user", "details": e.to_string() }),
+            );
             (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
         })?;
 
     if exists == 1 {
-        let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+        let response = ApiResponse::error_with_data(
+            "Conflict",
+            json!({ "error": "Email already registered", "field": "email" }),
+        );
         return Err((StatusCode::CONFLICT, Json(response)));
     }
 
     // Hash the password in a blocking thread to avoid blocking the async runtime
     let pw_to_hash = payload.password.clone();
-    let hashed_password = match tokio::task::spawn_blocking(move || bcrypt::hash(&pw_to_hash, 4)).await {
-        Ok(Ok(h)) => h,
-        Ok(Err(_)) => {
-            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password" }));
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
-        }
-        Err(join_err) => {
-            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to hash password", "details": join_err.to_string() }));
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
-        }
-    };
+    let hashed_password =
+        match tokio::task::spawn_blocking(move || bcrypt::hash(&pw_to_hash, 4)).await {
+            Ok(Ok(h)) => h,
+            Ok(Err(_)) => {
+                let response = ApiResponse::error_with_data(
+                    "Hash error",
+                    json!({ "error": "Failed to hash password" }),
+                );
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+            }
+            Err(join_err) => {
+                let response = ApiResponse::error_with_data(
+                    "Hash error",
+                    json!({ "error": "Failed to hash password", "details": join_err.to_string() }),
+                );
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
+            }
+        };
 
     // Insert the new user into the database
     let res = sqlx::query(
@@ -64,22 +73,36 @@ pub async fn register_handler(
     .await
     .map_err(|e| {
         if let sqlx::Error::Database(db_err) = &e {
-            if let Some(code) = db_err.code() && code == "1062" {
-                let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+            if let Some(code) = db_err.code()
+                && code == "1062"
+            {
+                let response = ApiResponse::error_with_data(
+                    "Conflict",
+                    json!({ "error": "Email already registered", "field": "email" }),
+                );
                 return (StatusCode::CONFLICT, Json(response));
             }
             let msg = db_err.message().to_string();
             if msg.to_lowercase().contains("duplicate") {
-                let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+                let response = ApiResponse::error_with_data(
+                    "Conflict",
+                    json!({ "error": "Email already registered", "field": "email" }),
+                );
                 return (StatusCode::CONFLICT, Json(response));
             }
         }
         let e_str = e.to_string();
         if e_str.contains("1062") || e_str.to_lowercase().contains("duplicate") {
-            let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
+            let response = ApiResponse::error_with_data(
+                "Conflict",
+                json!({ "error": "Email already registered", "field": "email" }),
+            );
             return (StatusCode::CONFLICT, Json(response));
         }
-        let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to register user", "details": e.to_string() }));
+        let response = ApiResponse::error_with_data(
+            "Database error",
+            json!({ "error": "Failed to register user", "details": e.to_string() }),
+        );
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
     })?;
 
@@ -96,13 +119,19 @@ pub async fn register_handler(
     .fetch_one(&db_pool)
     .await
     .map_err(|e| {
-        let response = ApiResponse::error_with_data("Database error", json!({ "error": "Failed to fetch registered user", "details": e.to_string() }));
+        let response = ApiResponse::error_with_data(
+            "Database error",
+            json!({ "error": "Failed to fetch registered user", "details": e.to_string() }),
+        );
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
     })?;
 
     // Serialize user into JSON value
     let user_value = serde_json::to_value(user).map_err(|e| {
-        let response = ApiResponse::error_with_data("Serialization error", json!({ "error": "Failed to serialize user", "details": e.to_string() }));
+        let response = ApiResponse::error_with_data(
+            "Serialization error",
+            json!({ "error": "Failed to serialize user", "details": e.to_string() }),
+        );
         (StatusCode::INTERNAL_SERVER_ERROR, Json(response))
     })?;
     let response = ApiResponse::success_with_data("User registered", user_value);
