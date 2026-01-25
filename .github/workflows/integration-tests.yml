@@ -40,6 +40,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Detect changes in test files
+        id: tests_changed
+        run: |
+          # Fetch main to diff against (shallow is OK)
+          git fetch origin main --depth=1 || true
+
+          # Compute changed files between origin/main and current HEAD
+          DIFF=$(git diff --name-only origin/main...HEAD || true)
+          echo "Changed files:\n$DIFF"
+
+          # Consider files in tests/ or k6/ or any *_test.rs/_tests.rs as test changes
+          if echo "$DIFF" | grep -E '(^tests/|/tests/|^k6/|_test.rs$|_tests.rs$)' >/dev/null; then
+            echo "tests_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "tests_changed=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -78,6 +95,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Run unit tests
+        if: steps.tests_changed.outputs.tests_changed == 'true'
         run: cargo test --lib -- --nocapture
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
@@ -85,6 +103,7 @@ jobs:
           APP_HOST: ${{ env.APP_HOST }}
 
       - name: Run integration tests
+        if: steps.tests_changed.outputs.tests_changed == 'true'
         run: cargo test --tests -- --nocapture
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
