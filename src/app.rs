@@ -51,11 +51,15 @@ pub fn build_router() -> Router {
     // NOTE: this must be outermost (added last) so it runs before the rate limiter and sets the `ClientIp` extension
     app = app.layer(axum::middleware::from_fn(crate::middlewares::proxy::proxy_middleware));
 
+    use axum::routing::get;
+
     // Optional debug endpoint for the rate limiter (only enabled when RATE_LIMIT_DEBUG=true)
     if std::env::var("RATE_LIMIT_DEBUG").map(|v| v == "true").unwrap_or(false) {
-        use axum::routing::get;
         app = app.route("/debug/rate_limiter", get(crate::middlewares::rate_limiter::debug_info));
     }
+
+    // Healthcheck endpoint (DB-aware)
+    app = app.route("/health", get(crate::handlers::health_handler::health));
 
     app
 }
