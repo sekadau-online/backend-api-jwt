@@ -244,8 +244,14 @@ Configuration (via environment variables):
 - `RATE_LIMIT_BURST` — maximum tokens the bucket can hold (default: `RATE_LIMIT_RPS * 2`)
 - `RATE_LIMIT_REQUEST_COST` — cost (float) consumed per request (default: `1.0`). Use values < 1.0 to allow higher effective throughput per key (useful when many clients are aggregated into a single IP behind NAT or an edge). Note: this changes token consumption, not how shortages are reported (see `RATE_LIMIT_ACTION`).
 - `RATE_LIMIT_ACTION` — action when a bucket is empty (supported: `drop` = close/204, `throttle` = 429). Default: `drop`.
+- `RATE_LIMIT_BUCKET_TTL_SECS` — how long (seconds) a bucket is considered idle before the background cleaner evicts it (default 300).
 - `RATE_LIMIT_DEBUG` — `true` to expose `/debug/rate_limiter` endpoint for inspection (use only in dev/test). Protect with `RATE_LIMIT_DEBUG_TOKEN`.
 - `RATE_LIMIT_DEBUG_TOKEN` — bearer token used to authorize access to `/debug/rate_limiter` if `RATE_LIMIT_DEBUG=true`.
+
+Cleanup / eviction
+- The rate limiter runs a background cleaner (every 30 seconds) which evicts buckets that have not been accessed for `RATE_LIMIT_BUCKET_TTL_SECS` seconds. This keeps memory bounded and ensures stale client buckets are removed automatically.
+- For tests and one-off maintenance you can trigger a single cleanup run programmatically by calling `backend_api_jwt::middlewares::rate_limiter::purge_stale_buckets_once(ttl_secs)` from a test or helper binary. Useful in integration tests to ensure deterministic state.
+- The admin `POST /debug/rate_limiter` action can also be used to drop individual buckets by key (see examples above).
 
 Notes:
 - The implementation lives in `src/middlewares/rate_limiter.rs` and is intended for single-instance deployments. For multi-instance setups, use a centralized rate limiter (Redis, API Gateway) to coordinate limits across replicas.
