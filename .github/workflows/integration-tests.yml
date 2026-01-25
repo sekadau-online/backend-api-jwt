@@ -35,6 +35,8 @@ jobs:
       DATABASE_URL: mysql://root:${{ secrets.MYSQL_ROOT_PASSWORD }}@127.0.0.1:3306/db_backend_api_jwt_ci
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       APP_HOST: 127.0.0.1
+      # Lower bcrypt cost for CI to speed up test runtime
+      BCRYPT_COST: "4"
 
     steps:
       - name: Checkout repository
