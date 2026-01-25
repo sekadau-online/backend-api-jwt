@@ -4,7 +4,6 @@ use axum::{
     http::StatusCode,
 };
 use sqlx::MySqlPool;
-use validator::Validate;
 use serde_json::json;
 use crate::utils::handler::HandlerResult;
 // Import schemas request and response register
@@ -17,19 +16,8 @@ pub async fn register_handler(
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<RegisterSchema>,
 ) -> HandlerResult {
-    // Validate the incoming payload
-    if let Err(errors) = payload.validate() {
-        // Build a structured map: field -> [messages]
-        let mut errors_map = serde_json::Map::new();
-        for (field, errs) in errors.field_errors().iter() {
-            let msgs: Vec<String> = errs.iter()
-                .map(|e| e.message.clone().unwrap_or_else(|| "Invalid input".into()).to_string())
-                .collect();
-            errors_map.insert(field.to_string(), json!(msgs));
-        }
-        let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return Err((StatusCode::BAD_REQUEST, Json(response)));
-    }
+    // Validate the incoming payload (reusable helper)
+    crate::utils::validation::validate_payload(&payload)?;
 
     // Normalize email for consistent duplicate checks and storage
     let email_normalized = payload.email.trim().to_lowercase();

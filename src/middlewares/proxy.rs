@@ -41,10 +41,7 @@ fn parse_trusted_proxies() -> Vec<IpNet> {
             if t.is_empty() {
                 None
             } else {
-                match IpNet::from_str(t) {
-                    Ok(net) => Some(net),
-                    Err(_) => None,
-                }
+                IpNet::from_str(t).ok()
             }
         })
         .collect()

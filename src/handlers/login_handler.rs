@@ -5,7 +5,6 @@ use axum::{
 };
 
 use sqlx::MySqlPool;
-use validator::Validate;
 use serde_json::json;
 use crate::utils::handler::HandlerResult;
 //import schemas for login request and response
@@ -19,19 +18,8 @@ pub async fn login_handler(
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<LoginSchema>,
 ) -> HandlerResult {
-    // Validate the incoming payload
-    if let Err(errors) = payload.validate() {
-        // Build a structured map: field -> [messages]
-        let mut errors_map = serde_json::Map::new();
-        for (field, errs) in errors.field_errors().iter() {
-            let msgs: Vec<String> = errs.iter()
-                .map(|e| e.message.clone().unwrap_or_else(|| "Invalid input".into()).to_string())
-                .collect();
-            errors_map.insert(field.to_string(), json!(msgs));
-        }
-        let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return Err((StatusCode::BAD_REQUEST, Json(response)));
-    }
+    // Validate the incoming payload (reusable helper)
+    crate::utils::validation::validate_payload(&payload)?;
     // Normalize email for consistent lookup
     let email_normalized = payload.email.trim().to_lowercase();
     // Fetch user by email (include password to avoid extra roundtrip)
@@ -73,21 +61,25 @@ pub async fn login_handler(
         }
     };
 
-    // Verify password in a blocking thread to avoid blocking the async runtime
+    // Verify password using shared helper (runs bcrypt.verify in blocking thread with timeout)
+    let timeout_secs: Option<u64> = std::env::var("BCRYPT_VERIFY_TIMEOUT_SECONDS").ok().and_then(|v| v.parse().ok());
     let pw = payload.password.clone();
     let stored_pw = stored_password.clone();
-    let is_password_valid = match tokio::task::spawn_blocking(move || bcrypt::verify(&pw, &stored_pw)).await {
-        Ok(Ok(valid)) => valid,
-        Ok(Err(_)) => false,
-        Err(join_err) => {
-            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to verify password", "details": join_err.to_string() }));
+
+    match crate::utils::auth::verify_password_blocking(pw, stored_pw, timeout_secs).await {
+        Ok(true) => {
+            // ok
+        }
+        Ok(false) => {
+            tracing::warn!("login failed: invalid credentials for email={}", email_normalized);
+            let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
+            return Err((StatusCode::UNAUTHORIZED, Json(response)));
+        }
+        Err(e) => {
+            tracing::error!("hash verify error: {}", e);
+            let response = ApiResponse::error_with_data("Hash error", json!({ "error": "Failed to verify password" }));
             return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(response)));
         }
-    };
-
-    if !is_password_valid {
-        let response = ApiResponse::error_with_data("Unauthorized", json!({ "error": "Invalid email or password" }));
-        return Err((StatusCode::UNAUTHORIZED, Json(response)));
     }
     // Generate JWT token
     let token = generate_jwt_token(user.id).await.map_err(|e| {

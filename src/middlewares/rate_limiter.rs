@@ -19,7 +19,7 @@ struct Bucket {
     last_access: Instant,
 }
 
-static BUCKETS: Lazy<DashMap<String, Mutex<Bucket>>> = Lazy::new(|| DashMap::new());
+static BUCKETS: Lazy<DashMap<String, Mutex<Bucket>>> = Lazy::new(DashMap::new);
 
 // Background cleaner start flag
 static CLEANER_STARTED: AtomicBool = AtomicBool::new(false);
@@ -97,11 +97,7 @@ pub async fn rate_limiter(req: axum::http::Request<axum::body::Body>, next: Next
         Some((v, "x-forwarded-for".to_string()))
     } else if let Some(v) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
         Some((v.to_string(), "x-real-ip".to_string()))
-    } else if let Some(sa) = req.extensions().get::<std::net::SocketAddr>() {
-        Some((sa.ip().to_string(), "peer".to_string()))
-    } else {
-        None
-    };
+    } else { req.extensions().get::<std::net::SocketAddr>().map(|sa| (sa.ip().to_string(), "peer".to_string())) };
 
     let auth_token_opt = req.headers().get("authorization").and_then(|v| v.to_str().ok()).and_then(|s| {
         let s = s.trim();
@@ -348,12 +344,11 @@ async fn purge_stale_buckets(ttl_secs: u64) {
             false
         };
 
-        if should_remove {
-            if BUCKETS.remove(&k).is_some() {
+        if should_remove
+            && BUCKETS.remove(&k).is_some() {
                 removed_count += 1;
                 tracing::info!("rate_limiter: purged stale bucket key={}", k);
             }
-        }
     }
 
     println!("DEBUG: purge_stale_buckets: done removed={} buckets_after={}", removed_count, BUCKETS.len());

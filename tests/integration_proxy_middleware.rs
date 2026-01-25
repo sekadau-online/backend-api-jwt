@@ -52,7 +52,7 @@ async fn proxy_trusted_uses_header_source() {
 
     let client = reqwest::Client::new();
     let res = client
-        .get(&format!("http://{}/users", addr))
+        .get(format!("http://{}/users", addr))
         .header("cf-connecting-ip", "203.0.113.55")
         .send()
         .await
@@ -123,7 +123,7 @@ async fn proxy_not_trusted_uses_header_directly() {
 
     let client = reqwest::Client::new();
     let res = client
-        .get(&format!("http://{}/users", addr))
+        .get(format!("http://{}/users", addr))
         .header("cf-connecting-ip", "203.0.113.55")
         .send()
         .await

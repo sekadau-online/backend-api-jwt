@@ -9,7 +9,6 @@ use sqlx::MySqlPool;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use crate::utils::handler::HandlerResult;use bcrypt::hash;
-use validator::Validate;
 
 // Import Models User
 use crate::models::user::User;
@@ -74,19 +73,8 @@ pub async fn store(
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<UserStoreRequestSchema>,
 ) -> Result<(StatusCode, Json<ApiResponse<Value>>), (StatusCode, Json<ApiResponse<Value>>)> {
-    // Validate the incoming payload
-    if let Err(errors) = payload.validate() {
-        // Build a structured map: field -> [messages]
-        let mut errors_map = serde_json::Map::new();
-        for (field, errs) in errors.field_errors().iter() {
-            let msgs: Vec<String> = errs.iter()
-                .map(|e| e.message.clone().unwrap_or_else(|| "Invalid input".into()).to_string())
-                .collect();
-            errors_map.insert(field.to_string(), json!(msgs));
-        }
-        let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return Err((StatusCode::BAD_REQUEST, Json(response)));
-    }
+    // Validate the incoming payload (reusable helper)
+    crate::utils::validation::validate_payload(&payload)?;
 
     // Normalize email
     let email_normalized = payload.email.trim().to_lowercase();
@@ -106,12 +94,11 @@ pub async fn store(
     // Helper to map DB errors consistently (handles unique constraint -> 409)
     let map_db_err = |e: sqlx::Error| -> (StatusCode, Json<ApiResponse<Value>>) {
         if let sqlx::Error::Database(db_err) = &e {
-            if let Some(code) = db_err.code() {
-                if code == "1062" {
+            if let Some(code) = db_err.code()
+                && code == "1062" {
                     let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
                     return (StatusCode::CONFLICT, Json(response));
                 }
-            }
             let msg = db_err.message().to_string();
             if msg.to_lowercase().contains("duplicate") {
                 let response = ApiResponse::error_with_data("Conflict", json!({ "error": "Email already registered", "field": "email" }));
@@ -139,7 +126,7 @@ pub async fn store(
     .bind(&hashed_password)
     .execute(&db_pool)
     .await
-    .map_err(|e| map_db_err(e))?;
+    .map_err(map_db_err)?;
 
     let user_id = res.last_insert_id() as i64;
 
@@ -216,19 +203,8 @@ pub async fn update(
     Extension(db_pool): Extension<MySqlPool>,
     Json(payload): Json<UserUpdateRequestSchema>,
 ) -> HandlerResult {
-    // Validate the incoming payload
-    if let Err(errors) = payload.validate() {
-        // Build a structured map: field -> [messages]
-        let mut errors_map = serde_json::Map::new();
-        for (field, errs) in errors.field_errors().iter() {
-            let msgs: Vec<String> = errs.iter()
-                .map(|e| e.message.clone().unwrap_or_else(|| "Invalid input".into()).to_string())
-                .collect();
-            errors_map.insert(field.to_string(), json!(msgs));
-        }
-        let response = ApiResponse::error_with_data("Validation error", json!({ "errors": serde_json::Value::Object(errors_map) }));
-        return Err((StatusCode::BAD_REQUEST, Json(response)));
-    }
+    // Validate the incoming payload (reusable helper)
+    crate::utils::validation::validate_payload(&payload)?;
 
     // Prepare optional email (trim + lowercase if provided)
     let email_param: Option<String> = payload.email.as_ref().map(|s| s.trim().to_lowercase());
